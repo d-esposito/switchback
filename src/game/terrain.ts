@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { SimplexNoise } from "./noise";
-import { SEED, SPAWN, PEAK, TRAIL, WATER_Y } from "./config";
+import { SEED, SPAWN, PEAKS, TRAIL, WATER_Y } from "./config";
+
+const CROWN = PEAKS[0];
 
 const noise = new SimplexNoise(SEED);
 
@@ -40,11 +42,14 @@ export function heightAt(x: number, z: number): number {
   h += 2.6 * noise.fbm(x * 0.025 + 100, z * 0.025 + 100, 3);
 
   // Crown Peak: broad base + steeper upper cone
-  h += 118 * gauss(x - PEAK.x, z - PEAK.z, 155);
-  h += 42 * gauss(x - PEAK.x, z - PEAK.z, 48);
+  h += 118 * gauss(x - CROWN.x, z - CROWN.z, 155);
+  h += 42 * gauss(x - CROWN.x, z - CROWN.z, 48);
+  // the summit wall: the last stretch is a true climb that gates the peak
+  h += 48 * gauss(x - CROWN.x, z - CROWN.z, 26);
 
-  // companion hills
-  h += 38 * gauss(x - 185, z - 35, 90);
+  // companion hills — Outlook Knob (east) gets a rocky cap worth summiting
+  h += 52 * gauss(x - 185, z - 35, 95);
+  h += 16 * gauss(x - 185, z - 35, 30);
   h += 30 * gauss(x + 215, z + 55, 85);
   h += 24 * gauss(x + 130, z - 330, 70);
 

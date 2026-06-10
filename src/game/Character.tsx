@@ -1,18 +1,20 @@
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import type { Colors } from "./store";
+import { useGame, timeOfDay, type Colors } from "./store";
 
 interface CharacterProps {
   colors: Colors;
   hatStyle: string;
-  /** "idle" | "walk" | "run" | "jump" */
+  /** "idle" | "walk" | "run" | "jump" | "climb" | "wave" */
   anim: string;
   /** Optional: live speed for foot-sync; falls back to anim presets */
   speedRef?: React.RefObject<number>;
 }
 
-const ANIM_SPEED: Record<string, number> = { idle: 0, walk: 4.3, run: 7.6, jump: 2 };
+const ANIM_SPEED: Record<string, number> = {
+  idle: 0, walk: 4.3, run: 7.6, jump: 2, climb: 2.2, wave: 0,
+};
 
 /**
  * Procedural low-poly hiker, ~1.5m tall, feet at local origin.
@@ -24,15 +26,39 @@ export function Character({ colors, hatStyle, anim, speedRef }: CharacterProps) 
   const armL = useRef<THREE.Group>(null!);
   const armR = useRef<THREE.Group>(null!);
   const body = useRef<THREE.Group>(null!);
+  const lampDot = useRef<THREE.Mesh>(null!);
   const phase = useRef(Math.random() * 10);
 
   useFrame((_, dt) => {
     const speed = speedRef?.current ?? ANIM_SPEED[anim] ?? 0;
-    const moving = speed > 0.3 && anim !== "jump";
+    const moving = speed > 0.3 && anim !== "jump" && anim !== "climb" && anim !== "wave";
     phase.current += dt * (moving ? 2.1 * speed : 2.5);
     const p = phase.current;
 
-    if (anim === "jump") {
+    // headlamp dot glows from dusk to dawn for every hiker
+    const elev = Math.sin((timeOfDay(useGame.getState().clock) - 0.25) * Math.PI * 2);
+    lampDot.current.visible = elev < 0.06;
+
+    // wave is the only anim that twists the arm sideways — relax it otherwise
+    if (anim !== "wave") {
+      armR.current.rotation.z = THREE.MathUtils.lerp(armR.current.rotation.z, 0, 0.2);
+    }
+
+    if (anim === "climb") {
+      // alternating overhead reaches
+      armL.current.rotation.x = -2.5 + Math.sin(p) * 0.5;
+      armR.current.rotation.x = -2.5 + Math.sin(p + Math.PI) * 0.5;
+      legL.current.rotation.x = 0.5 + Math.sin(p + Math.PI) * 0.3;
+      legR.current.rotation.x = 0.5 + Math.sin(p) * 0.3;
+      body.current.position.y = 0.86;
+    } else if (anim === "wave") {
+      armR.current.rotation.x = -2.7;
+      armR.current.rotation.z = Math.sin(p * 3.2) * 0.45;
+      armL.current.rotation.x = THREE.MathUtils.lerp(armL.current.rotation.x, 0, 0.15);
+      legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, 0, 0.1);
+      legR.current.rotation.x = THREE.MathUtils.lerp(legR.current.rotation.x, 0, 0.1);
+      body.current.position.y = 0.86;
+    } else if (anim === "jump") {
       legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, 0.55, 0.2);
       legR.current.rotation.x = THREE.MathUtils.lerp(legR.current.rotation.x, -0.35, 0.2);
       armL.current.rotation.x = THREE.MathUtils.lerp(armL.current.rotation.x, -2.4, 0.15);
@@ -96,6 +122,16 @@ export function Character({ colors, hatStyle, anim, speedRef }: CharacterProps) 
         <mesh position={[0, 0.66, 0]}>
           <sphereGeometry args={[0.17, 12, 10]} />
           <meshStandardMaterial color={colors.skin} flatShading />
+        </mesh>
+
+        {/* headlamp dot — visible across the valley at night */}
+        <mesh ref={lampDot} position={[0, 0.7, 0.16]} visible={false}>
+          <boxGeometry args={[0.09, 0.05, 0.05]} />
+          <meshStandardMaterial
+            color="#fff3c8"
+            emissive="#ffe9a8"
+            emissiveIntensity={3.5}
+          />
         </mesh>
 
         {/* hat */}

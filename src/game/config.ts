@@ -8,7 +8,20 @@ export const WATER_Y = -3.2;
 // Landmarks
 export const SPAWN = { x: 0, z: 318 };
 export const CAMPFIRE = { x: 8, z: 305 };
-export const PEAK = { x: 0, z: -260, id: "crown-peak", name: "Crown Peak" };
+
+export interface Peak {
+  x: number;
+  z: number;
+  id: string;
+  name: string;
+}
+
+export const PEAKS: Peak[] = [
+  { x: 0, z: -260, id: "crown-peak", name: "Crown Peak" },
+  { x: 185, z: 35, id: "outlook-knob", name: "Outlook Knob" },
+];
+
+export const LOOKOUT = { x: -215, z: -55 };
 
 // The trail from the trailhead to the summit (color-stamped into the terrain)
 export const TRAIL: [number, number][] = [
@@ -27,14 +40,16 @@ export const TRAIL: [number, number][] = [
 // Movement
 export const WALK_SPEED = 4.3;
 export const RUN_SPEED = 7.6;
+export const CLIMB_SPEED = 1.5;
 export const JUMP_VEL = 7.8;
 export const GRAVITY = 22;
 export const SCRAMBLE_NY = 0.72; // ground normal.y below this = scramble (slow, drains)
-export const BLOCK_NY = 0.55; // below this = too steep to walk
+export const BLOCK_NY = 0.6; // below this = climbing territory (or no purchase at 0 stamina)
 
 // Stamina (0-100)
 export const STAMINA_RUN_DRAIN = 7;
 export const STAMINA_SCRAMBLE_DRAIN = 5;
+export const STAMINA_CLIMB_DRAIN = 9;
 export const STAMINA_JUMP_COST = 8;
 export const STAMINA_REGEN_IDLE = 14;
 export const STAMINA_REGEN_WALK = 6;
