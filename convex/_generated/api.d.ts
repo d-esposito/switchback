@@ -8,7 +8,11 @@
  * @module
  */
 
+import type * as cairns from "../cairns.js";
 import type * as hello from "../hello.js";
+import type * as players from "../players.js";
+import type * as signatures from "../signatures.js";
+import type * as world from "../world.js";
 
 import type {
   ApiFromModules,
@@ -17,7 +21,11 @@ import type {
 } from "convex/server";
 
 declare const fullApi: ApiFromModules<{
+  cairns: typeof cairns;
   hello: typeof hello;
+  players: typeof players;
+  signatures: typeof signatures;
+  world: typeof world;
 }>;
 
 /**
