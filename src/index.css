@@ -1,0 +1,86 @@
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: ui-rounded, "SF Pro Rounded", system-ui, sans-serif;
+  background: linear-gradient(180deg, #1c2a3a 0%, #2c4a3b 100%);
+  color: #f0ead8;
+  min-height: 100vh;
+}
+
+.basecamp {
+  max-width: 28rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+  text-align: center;
+}
+
+h1 {
+  font-size: 2.5rem;
+  margin: 0;
+}
+
+.sub {
+  opacity: 0.7;
+  margin-top: 0.25rem;
+}
+
+.card {
+  margin-top: 2rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(240, 234, 216, 0.15);
+  border-radius: 1rem;
+  padding: 1.5rem;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.row.big {
+  font-size: 1.4rem;
+}
+
+.dot {
+  width: 0.6rem;
+  height: 0.6rem;
+  border-radius: 50%;
+  background: #c2a24b;
+}
+
+.dot.ok {
+  background: #7fc26e;
+}
+
+button {
+  font: inherit;
+  padding: 0.6rem 1.4rem;
+  border-radius: 0.6rem;
+  border: none;
+  background: #e8a94e;
+  color: #2a2417;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f2bc69;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.hint {
+  font-size: 0.85rem;
+  opacity: 0.6;
+  margin-top: 1rem;
+  margin-bottom: 0;
+}
