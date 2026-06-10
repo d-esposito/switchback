@@ -1,33 +1,67 @@
-import { useQuery, useMutation } from "convex/react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../convex/_generated/api";
+import { LoginScreen } from "./ui/LoginScreen";
+import { HUD } from "./ui/HUD";
+import { RegisterPanel } from "./ui/RegisterPanel";
+import { Game } from "./game/Game";
+import { useGame, type Profile } from "./game/store";
+import { getDeviceId } from "./lib/ids";
+
+const PROFILE_KEY = "trailbound:profile";
+
+function loadProfile(): Profile | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY);
+    return raw ? (JSON.parse(raw) as Profile) : null;
+  } catch {
+    return null;
+  }
+}
 
 export default function App() {
-  const visits = useQuery(api.hello.trailVisits);
-  const logVisit = useMutation(api.hello.logVisit);
-  const connected = visits !== undefined;
+  const [stage, setStage] = useState<"login" | "game">("login");
+  const [joining, setJoining] = useState(false);
+  const [saved] = useState(loadProfile);
+
+  const join = useMutation(api.players.join);
+  const ensureWorld = useMutation(api.world.ensure);
+  const world = useQuery(api.world.get);
+
+  const setProfile = useGame((s) => s.setProfile);
+  const setResumeAt = useGame((s) => s.setResumeAt);
+  const setClock = useGame((s) => s.setClock);
+
+  // keep the shared world clock in the store
+  useEffect(() => {
+    if (world) setClock({ epochMs: world.epochMs, dayLengthMs: world.dayLengthMs });
+  }, [world, setClock]);
+
+  const begin = async (profile: Profile) => {
+    setJoining(true);
+    try {
+      localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+      setProfile(profile);
+      const [resume] = await Promise.all([
+        join({ deviceId: getDeviceId(), ...profile }),
+        ensureWorld(),
+      ]);
+      setResumeAt(resume);
+      setStage("game");
+    } finally {
+      setJoining(false);
+    }
+  };
+
+  if (stage === "login") {
+    return <LoginScreen initial={saved} joining={joining} onBegin={begin} />;
+  }
 
   return (
-    <div className="basecamp">
-      <h1>⛰ Trailbound</h1>
-      <p className="sub">Base camp — infrastructure check</p>
-      <div className="card">
-        <div className="row">
-          <span className={connected ? "dot ok" : "dot"} />
-          <span>{connected ? "Connected to Convex" : "Connecting to Convex…"}</span>
-        </div>
-        <div className="row big">
-          <span>Trail register:</span>
-          <strong>{visits ?? "—"}</strong>
-          <span>visits</span>
-        </div>
-        <button onClick={() => logVisit()} disabled={!connected}>
-          Sign the register
-        </button>
-        <p className="hint">
-          Open this page in two tabs — the count updates live in both. That's
-          the same plumbing multiplayer presence will use.
-        </p>
-      </div>
-    </div>
+    <>
+      <Game />
+      <HUD />
+      <RegisterPanel />
+    </>
   );
 }
