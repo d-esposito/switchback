@@ -1,5 +1,13 @@
 # Trailbound — Design & Technical Plan
 
+> **Status (June 2026):** Phases 2–3 and the first slice of phase 4 are live.
+> Shipped: seeded open world (Crown Peak + Outlook Knob + lake + fire lookout),
+> hiker controller with stamina + scramble + summit-wall climbing, shared
+> day/night clock with headlamps, campfire regen, summit registers with live
+> signatures, persistent cairns, wave emote, multiplayer presence at ~5 Hz,
+> wilderness-permit login + trail-artifact HUD. Backlog: weather, crafting/gear,
+> photo mode, wildlife, ranger quests, daily challenges, audio.
+
 *Working title ideas: Trailbound, Switchback, Golden Hour, Wayfind, Scree, Basecamp*
 
 A cozy, browser-based, open-world 3D multiplayer hiking game. You arrive at a mountain
