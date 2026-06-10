@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
-import { CAMPFIRE, PEAK, SPAWN } from "./config";
+import { CAMPFIRE, LOOKOUT, SPAWN, type Peak } from "./config";
 import { heightAt } from "./terrain";
 
 export function Campfire() {
@@ -54,10 +54,10 @@ export function Campfire() {
   );
 }
 
-export function SummitRegister() {
-  const y = heightAt(PEAK.x, PEAK.z);
+export function SummitRegister({ peak }: { peak: Peak }) {
+  const y = heightAt(peak.x, peak.z);
   return (
-    <group position={[PEAK.x, y, PEAK.z]}>
+    <group position={[peak.x, y, peak.z]}>
       {/* stone pedestal */}
       <mesh position={[0, 0.45, 0]}>
         <boxGeometry args={[0.5, 0.9, 0.4]} />
@@ -89,7 +89,58 @@ export function SummitRegister() {
         outlineWidth={0.012}
         outlineColor="#33291c"
       >
-        {PEAK.name.toUpperCase()}
+        {peak.name.toUpperCase()}
+      </Text>
+    </group>
+  );
+}
+
+export function FireLookout() {
+  const y = heightAt(LOOKOUT.x, LOOKOUT.z);
+  const legs = [
+    [-1.4, -1.4],
+    [1.4, -1.4],
+    [-1.4, 1.4],
+    [1.4, 1.4],
+  ] as const;
+  return (
+    <group position={[LOOKOUT.x, y, LOOKOUT.z]}>
+      {legs.map(([lx, lz], i) => (
+        <mesh key={i} position={[lx * 0.8, 3, lz * 0.8]} rotation={[lz * -0.12, 0, lx * 0.12]}>
+          <cylinderGeometry args={[0.09, 0.13, 6.4, 6]} />
+          <meshStandardMaterial color="#6b4f31" flatShading />
+        </mesh>
+      ))}
+      {/* cabin */}
+      <mesh position={[0, 6.7, 0]}>
+        <boxGeometry args={[2.6, 1.5, 2.6]} />
+        <meshStandardMaterial color="#8a6a44" flatShading />
+      </mesh>
+      {/* windows band */}
+      <mesh position={[0, 6.85, 0]}>
+        <boxGeometry args={[2.65, 0.55, 2.65]} />
+        <meshStandardMaterial color="#3a4d5c" flatShading />
+      </mesh>
+      {/* pyramid roof */}
+      <mesh position={[0, 7.9, 0]} rotation={[0, Math.PI / 4, 0]}>
+        <coneGeometry args={[2.2, 0.9, 4]} />
+        <meshStandardMaterial color="#5d4128" flatShading />
+      </mesh>
+      {/* railing deck */}
+      <mesh position={[0, 5.9, 0]}>
+        <boxGeometry args={[3.3, 0.12, 3.3]} />
+        <meshStandardMaterial color="#7a5c3a" flatShading />
+      </mesh>
+      <Text
+        position={[0, 4.6, 1.1]}
+        fontSize={0.28}
+        color="#f0e6cf"
+        anchorX="center"
+        outlineWidth={0.014}
+        outlineColor="#2e2416"
+        rotation={[0, 0, 0]}
+      >
+        {"ABANDONED LOOKOUT"}
       </Text>
     </group>
   );

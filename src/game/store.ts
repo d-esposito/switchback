@@ -42,8 +42,9 @@ interface GameState {
   prompt: string | null;
   setPrompt: (p: string | null) => void;
 
-  registerOpen: boolean;
-  setRegisterOpen: (o: boolean) => void;
+  /** Peak id whose register panel is open, or null. */
+  activePeak: string | null;
+  setActivePeak: (id: string | null) => void;
 
   onlineCount: number;
   setOnlineCount: (n: number) => void;
@@ -67,8 +68,8 @@ export const useGame = create<GameState>((set) => ({
   setPointerLocked: (pointerLocked) => set({ pointerLocked }),
   prompt: null,
   setPrompt: (prompt) => set({ prompt }),
-  registerOpen: false,
-  setRegisterOpen: (registerOpen) => set({ registerOpen }),
+  activePeak: null,
+  setActivePeak: (activePeak) => set({ activePeak }),
   onlineCount: 1,
   setOnlineCount: (onlineCount) => set({ onlineCount }),
   toast: null,

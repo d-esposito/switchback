@@ -5,7 +5,8 @@ import { DayNight } from "./DayNight";
 import { LocalPlayer } from "./LocalPlayer";
 import { RemotePlayers } from "./RemotePlayers";
 import { Cairns } from "./Cairns";
-import { Campfire, SummitRegister, TrailheadSign } from "./Landmarks";
+import { Campfire, FireLookout, SummitRegister, TrailheadSign } from "./Landmarks";
+import { PEAKS } from "./config";
 
 export function Game() {
   return (
@@ -21,8 +22,11 @@ export function Game() {
       <DayNight />
       <World />
       <Campfire />
-      <SummitRegister />
+      {PEAKS.map((peak) => (
+        <SummitRegister key={peak.id} peak={peak} />
+      ))}
       <TrailheadSign />
+      <FireLookout />
       <Cairns />
       <LocalPlayer />
       <RemotePlayers />

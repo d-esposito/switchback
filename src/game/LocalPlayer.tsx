@@ -5,13 +5,13 @@ import * as THREE from "three";
 import { api } from "../../convex/_generated/api";
 import { Character } from "./Character";
 import { heightAt, normalAt } from "./terrain";
-import { useGame } from "./store";
+import { useGame, timeOfDay } from "./store";
 import { playerPosRef } from "./sharedRefs";
 import { getDeviceId } from "../lib/ids";
 import {
-  SPAWN, PEAK, CAMPFIRE, PLAY_RADIUS,
-  WALK_SPEED, RUN_SPEED, JUMP_VEL, GRAVITY, SCRAMBLE_NY, BLOCK_NY,
-  STAMINA_RUN_DRAIN, STAMINA_SCRAMBLE_DRAIN, STAMINA_JUMP_COST,
+  SPAWN, PEAKS, CAMPFIRE, PLAY_RADIUS,
+  WALK_SPEED, RUN_SPEED, CLIMB_SPEED, JUMP_VEL, GRAVITY, SCRAMBLE_NY, BLOCK_NY,
+  STAMINA_RUN_DRAIN, STAMINA_SCRAMBLE_DRAIN, STAMINA_CLIMB_DRAIN, STAMINA_JUMP_COST,
   STAMINA_REGEN_IDLE, STAMINA_REGEN_WALK, CAMPFIRE_REGEN_MULT, CAMPFIRE_RADIUS,
   SEND_MIN_INTERVAL_MS, IDLE_HEARTBEAT_MS,
 } from "./config";
@@ -31,6 +31,9 @@ export function LocalPlayer() {
   const speedRef = useRef(0);
   const stamina = useRef(100);
   const anim = useRef("idle");
+  const waveUntil = useRef(0);
+  const lamp = useRef<THREE.SpotLight>(null!);
+  const lampTarget = useRef<THREE.Object3D>(null!);
   const lastSent = useRef({ t: 0, x: 0, y: 0, z: 0, rotY: 0, anim: "idle" });
 
   const gl = useThree((s) => s.gl);
@@ -42,7 +45,7 @@ export function LocalPlayer() {
   const setResting = useGame((s) => s.setResting);
   const setPrompt = useGame((s) => s.setPrompt);
   const setPointerLocked = useGame((s) => s.setPointerLocked);
-  const setRegisterOpen = useGame((s) => s.setRegisterOpen);
+  const setActivePeak = useGame((s) => s.setActivePeak);
   const resumeAt = useGame((s) => s.resumeAt);
 
   const pos = useRef(
@@ -62,17 +65,20 @@ export function LocalPlayer() {
     const down = (e: KeyboardEvent) => {
       keys.current[e.code] = true;
       if (e.code === "KeyE") {
-        const d = Math.hypot(pos.current.x - PEAK.x, pos.current.z - PEAK.z);
-        if (d < REGISTER_RADIUS) {
-          setRegisterOpen(true);
+        const near = PEAKS.find(
+          (pk) => Math.hypot(pos.current.x - pk.x, pos.current.z - pk.z) < REGISTER_RADIUS
+        );
+        if (near) {
+          setActivePeak(near.id);
           document.exitPointerLock();
         }
       }
-      if (e.code === "Escape") setRegisterOpen(false);
+      if (e.code === "KeyQ") waveUntil.current = performance.now() + 1900;
+      if (e.code === "Escape") setActivePeak(null);
     };
     const up = (e: KeyboardEvent) => (keys.current[e.code] = false);
     const click = () => {
-      if (!useGame.getState().registerOpen) gl.domElement.requestPointerLock();
+      if (!useGame.getState().activePeak) gl.domElement.requestPointerLock();
     };
     const lockChange = () => setPointerLocked(document.pointerLockElement === gl.domElement);
     const mouse = (e: MouseEvent) => {
@@ -92,7 +98,12 @@ export function LocalPlayer() {
       document.removeEventListener("pointerlockchange", lockChange);
       gl.domElement.removeEventListener("click", click);
     };
-  }, [gl, setPointerLocked, setRegisterOpen]);
+  }, [gl, setPointerLocked, setActivePeak]);
+
+  // wire the spotlight to its target object (both exist after first mount)
+  useEffect(() => {
+    lamp.current.target = lampTarget.current;
+  }, []);
 
   useFrame((_, rawDt) => {
     const dt = Math.min(rawDt, 0.05);
@@ -123,7 +134,7 @@ export function LocalPlayer() {
     if (k.KeyS) iz += 1;
     if (k.KeyA) ix -= 1;
     if (k.KeyD) ix += 1;
-    const hasInput = (ix !== 0 || iz !== 0) && !useGame.getState().registerOpen;
+    const hasInput = (ix !== 0 || iz !== 0) && !useGame.getState().activePeak;
 
     const wantRun = !!k.ShiftLeft || !!k.ShiftRight;
     const canRun = stamina.current > 0.5;
@@ -132,6 +143,7 @@ export function LocalPlayer() {
     // --- slope tiers ---
     const nY = normalAt(p.x, p.z).y;
     let scrambling = false;
+    let climbing = false;
     if (hasInput && speed > 0) {
       const sin = Math.sin(yaw.current);
       const cos = Math.cos(yaw.current);
@@ -144,10 +156,19 @@ export function LocalPlayer() {
       const uphill = heightAt(aheadX, aheadZ) > heightAt(p.x, p.z);
 
       if (uphill && aheadNY < BLOCK_NY) {
-        // too steep — no purchase
-        dx = 0;
-        dz = 0;
-        speed = 0;
+        if (stamina.current > 1 && grounded.current) {
+          // climbing: slow, expensive, possible only while stamina lasts
+          climbing = true;
+          const scale = (CLIMB_SPEED * dt) / Math.hypot(dx, dz);
+          dx *= scale;
+          dz *= scale;
+          speed = CLIMB_SPEED;
+        } else {
+          // no strength left — no purchase on the rock
+          dx = 0;
+          dz = 0;
+          speed = 0;
+        }
       } else if (uphill && aheadNY < SCRAMBLE_NY) {
         scrambling = true;
         dx *= 0.45;
@@ -196,6 +217,7 @@ export function LocalPlayer() {
     let ds = 0;
     if (speed > WALK_SPEED + 0.1) ds -= STAMINA_RUN_DRAIN;
     if (scrambling) ds -= STAMINA_SCRAMBLE_DRAIN;
+    if (climbing) ds -= STAMINA_CLIMB_DRAIN;
     if (ds === 0) {
       ds = hasInput ? STAMINA_REGEN_WALK : STAMINA_REGEN_IDLE;
       if (nearFire) ds *= CAMPFIRE_REGEN_MULT;
@@ -205,13 +227,17 @@ export function LocalPlayer() {
     setResting(nearFire && !hasInput);
 
     // --- anim state ---
-    anim.current = !grounded.current
-      ? "jump"
-      : speed > WALK_SPEED + 0.1
-        ? "run"
-        : speed > 0.1
-          ? "walk"
-          : "idle";
+    anim.current = climbing
+      ? "climb"
+      : !grounded.current
+        ? "jump"
+        : speed > WALK_SPEED + 0.1
+          ? "run"
+          : speed > 0.1
+            ? "walk"
+            : performance.now() < waveUntil.current
+              ? "wave"
+              : "idle";
 
     // --- visuals ---
     group.current.position.copy(p);
@@ -234,11 +260,26 @@ export function LocalPlayer() {
     camera.position.set(cx, Math.max(cy, camGround), cz);
     camera.lookAt(p.x, p.y + 1.45, p.z);
 
+    // --- headlamp: on through dusk, night and dawn ---
+    const elev = Math.sin((timeOfDay(useGame.getState().clock) - 0.25) * Math.PI * 2);
+    const lampOn = elev < 0.06;
+    lamp.current.visible = lampOn;
+    if (lampOn) {
+      lampTarget.current.position.set(
+        p.x - Math.sin(heading.current) * -8,
+        heightAt(p.x - Math.sin(heading.current) * -8, p.z - Math.cos(heading.current) * -8) + 1,
+        p.z - Math.cos(heading.current) * -8
+      );
+      lamp.current.position.set(p.x, p.y + 1.45, p.z);
+    }
+
     // --- interaction prompt ---
-    const dReg = Math.hypot(p.x - PEAK.x, p.z - PEAK.z);
+    const nearPeak = PEAKS.find(
+      (pk) => Math.hypot(p.x - pk.x, p.z - pk.z) < REGISTER_RADIUS
+    );
     setPrompt(
-      dReg < REGISTER_RADIUS && !useGame.getState().registerOpen
-        ? "Press E — sign the summit register"
+      nearPeak && !useGame.getState().activePeak
+        ? `Press E — sign the ${nearPeak.name} register`
         : null
     );
 
@@ -263,13 +304,27 @@ export function LocalPlayer() {
   const profile = useGame((s) => s.profile)!;
 
   return (
-    <group ref={group}>
-      <Character
-        colors={profile.colors}
-        hatStyle={profile.hatStyle}
-        anim={anim.current}
-        speedRef={speedRef}
+    <>
+      <group ref={group}>
+        <Character
+          colors={profile.colors}
+          hatStyle={profile.hatStyle}
+          anim={anim.current}
+          speedRef={speedRef}
+        />
+      </group>
+      {/* headlamp: world-space spotlight, only visible when dark */}
+      <spotLight
+        ref={lamp}
+        visible={false}
+        color="#ffe9bd"
+        intensity={60}
+        angle={0.45}
+        penumbra={0.6}
+        distance={30}
+        decay={1.6}
       />
-    </group>
+      <object3D ref={lampTarget} />
+    </>
   );
 }

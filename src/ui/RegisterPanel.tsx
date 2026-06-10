@@ -1,9 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useGame } from "../game/store";
 import { getDeviceId } from "../lib/ids";
-import { PEAK } from "../game/config";
+import { PEAKS } from "../game/config";
 
 function timeAgo(ms: number): string {
   const s = Math.max(1, Math.floor((Date.now() - ms) / 1000));
@@ -16,19 +16,31 @@ function timeAgo(ms: number): string {
 }
 
 export function RegisterPanel() {
-  const open = useGame((s) => s.registerOpen);
-  const setOpen = useGame((s) => s.setRegisterOpen);
+  const activePeak = useGame((s) => s.activePeak);
+  const setActivePeak = useGame((s) => s.setActivePeak);
   const profile = useGame((s) => s.profile);
-  const data = useQuery(api.signatures.list, open ? { peakId: PEAK.id } : "skip");
+  const data = useQuery(
+    api.signatures.list,
+    activePeak ? { peakId: activePeak } : "skip"
+  );
   const sign = useMutation(api.signatures.sign);
   const [justSigned, setJustSigned] = useState(false);
   const [already, setAlready] = useState(false);
 
-  if (!open || !profile) return null;
+  // each peak's logbook gets a fresh signing state
+  useEffect(() => {
+    setJustSigned(false);
+    setAlready(false);
+  }, [activePeak]);
+
+  const peak = PEAKS.find((p) => p.id === activePeak);
+  if (!peak || !profile) return null;
+
+  const setOpen = (open: boolean) => setActivePeak(open ? peak.id : null);
 
   const doSign = async () => {
     const fresh = await sign({
-      peakId: PEAK.id,
+      peakId: peak.id,
       deviceId: getDeviceId(),
       name: profile.name,
     });
@@ -40,7 +52,7 @@ export function RegisterPanel() {
     <div className="register-backdrop" onClick={() => setOpen(false)}>
       <div className="register" onClick={(e) => e.stopPropagation()}>
         <div className="stamp">{data ? `${data.count} summited` : "…"}</div>
-        <h2>{PEAK.name} Register</h2>
+        <h2>{peak.name} Register</h2>
         <p className="meta">elev. high enough to feel it · leave your mark</p>
 
         {data && data.recent.length === 0 && (

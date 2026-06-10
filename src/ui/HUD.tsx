@@ -78,7 +78,7 @@ export function HUD() {
   const prompt = useGame((s) => s.prompt);
   const toast = useGame((s) => s.toast);
   const pointerLocked = useGame((s) => s.pointerLocked);
-  const registerOpen = useGame((s) => s.registerOpen);
+  const registerOpen = useGame((s) => s.activePeak !== null);
   const [controlsFaded, setControlsFaded] = useState(false);
 
   useEffect(() => {
@@ -122,9 +122,9 @@ export function HUD() {
 
       <div className={`controls${controlsFaded ? " faded" : ""}`}>
         <div className="head">Field guide</div>
-        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> hike</div>
+        <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> hike · steep rock climbs slowly</div>
         <div><kbd>shift</kbd> run · <kbd>space</kbd> hop</div>
-        <div><kbd>E</kbd> interact · <kbd>B</kbd> stack a cairn</div>
+        <div><kbd>E</kbd> interact · <kbd>B</kbd> stack a cairn · <kbd>Q</kbd> wave</div>
       </div>
     </div>
   );
