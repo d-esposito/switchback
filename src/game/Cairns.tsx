@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { heightAt } from "./terrain";
-import { useGame } from "./store";
+import { useGame, showToast } from "./store";
 import { playerPosRef } from "./sharedRefs";
 
 /** A little stack of three stones. Player-built, persistent, visible to all. */
@@ -32,7 +32,6 @@ export function Cairns() {
   const build = useMutation(api.cairns.build);
   const lastBuilt = useRef(0);
   const profile = useGame((s) => s.profile);
-  const setToast = useGame((s) => s.setToast);
 
   const name = profile?.name;
   useEffect(() => {
@@ -43,12 +42,11 @@ export function Cairns() {
       const p = playerPosRef.current;
       lastBuilt.current = now;
       void build({ x: p.x, y: heightAt(p.x, p.z), z: p.z, builtBy: name });
-      setToast("You stacked a cairn. It will outlast your hike.");
-      setTimeout(() => setToast(null), 3500);
+      showToast("You stacked a cairn. It will outlast your hike.");
     };
     window.addEventListener("keydown", down);
     return () => window.removeEventListener("keydown", down);
-  }, [build, name, setToast]);
+  }, [build, name]);
 
   const rendered = useMemo(
     () => (cairns ?? []).map((c) => <CairnStack key={c.id} x={c.x} z={c.z} />),

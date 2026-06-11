@@ -4,9 +4,24 @@ import { api } from "../convex/_generated/api";
 import { LoginScreen } from "./ui/LoginScreen";
 import { HUD } from "./ui/HUD";
 import { RegisterPanel } from "./ui/RegisterPanel";
+import { CraftPanel } from "./ui/CraftPanel";
 import { Game } from "./game/Game";
 import { useGame, type Profile } from "./game/store";
 import { getDeviceId } from "./lib/ids";
+
+/** Mirrors the player's server-side inventory/gear into the UI store. */
+function PlayerData() {
+  const me = useQuery(api.crafting.me, { deviceId: getDeviceId() });
+  const setInventory = useGame((s) => s.setInventory);
+  const setGear = useGame((s) => s.setGear);
+  useEffect(() => {
+    if (me) {
+      setInventory(me.inventory);
+      setGear(me.gear);
+    }
+  }, [me, setInventory, setGear]);
+  return null;
+}
 
 const PROFILE_KEY = "trailbound:profile";
 
@@ -62,6 +77,8 @@ export default function App() {
       <Game />
       <HUD />
       <RegisterPanel />
+      <CraftPanel />
+      <PlayerData />
     </>
   );
 }

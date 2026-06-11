@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { useGame, timeOfDay } from "../game/store";
+import { weatherAt } from "../game/weather";
 
 function phaseLabel(t: number): string {
   if (t < 0.21 || t >= 0.83) return "starlight";
@@ -24,6 +25,7 @@ function DayClock() {
   const sunX = Math.cos(ang) * 12;
   const sunY = -Math.sin(ang) * 12;
   const isDay = Math.sin(ang) > -0.08;
+  const w = weatherAt(clock);
 
   return (
     <div className="dayclock">
@@ -37,7 +39,10 @@ function DayClock() {
           }}
         />
       </div>
-      <span className="label">{phaseLabel(t)}</span>
+      <span className="label">
+        {phaseLabel(t)}
+        {w.label !== "clear" && ` · ${w.label}`}
+      </span>
     </div>
   );
 }
@@ -68,6 +73,26 @@ function StaminaDial() {
           energy
         </span>
       </div>
+    </div>
+  );
+}
+
+function InventoryStrip() {
+  const inv = useGame((s) => s.inventory);
+  const gear = useGame((s) => s.gear);
+  const items: string[] = [];
+  if (inv.sticks) items.push(`🪵 ${inv.sticks}`);
+  if (inv.stones) items.push(`🪨 ${inv.stones}`);
+  if (inv.thatch) items.push(`🌾 ${inv.thatch}`);
+  if (gear.walkingStick) items.push("🥾 stick");
+  if (gear.ropes) items.push(`🧗 ×${gear.ropes}`);
+  if (gear.tents) items.push(`⛺ ×${gear.tents}`);
+  if (items.length === 0) return null;
+  return (
+    <div className="inv-strip">
+      {items.map((it) => (
+        <span key={it}>{it}</span>
+      ))}
     </div>
   );
 }
@@ -108,6 +133,7 @@ export function HUD() {
 
       <DayClock />
       <StaminaDial />
+      <InventoryStrip />
 
       {resting && <div className="resting-chip">🔥 resting by the fire — energy ×3</div>}
       {prompt && (
@@ -123,8 +149,9 @@ export function HUD() {
       <div className={`controls${controlsFaded ? " faded" : ""}`}>
         <div className="head">Field guide</div>
         <div><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> hike · steep rock climbs slowly</div>
-        <div><kbd>shift</kbd> run · <kbd>space</kbd> hop</div>
-        <div><kbd>E</kbd> interact · <kbd>B</kbd> stack a cairn · <kbd>Q</kbd> wave</div>
+        <div><kbd>shift</kbd> run · <kbd>space</kbd> hop · <kbd>Q</kbd> wave</div>
+        <div><kbd>E</kbd> interact · <kbd>B</kbd> cairn · <kbd>C</kbd> craft</div>
+        <div><kbd>R</kbd> fix rope · <kbd>T</kbd> pitch tent · <kbd>M</kbd> sound</div>
       </div>
     </div>
   );
