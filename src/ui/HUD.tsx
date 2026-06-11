@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useGame, timeOfDay, showToast } from "../game/store";
 import { weatherAt } from "../game/weather";
 import { voice } from "../game/voice";
+import { VOICE_ENABLED } from "../game/config";
 
 function phaseLabel(t: number): string {
   if (t < 0.21 || t >= 0.83) return "starlight";
@@ -178,7 +179,7 @@ export function HUD() {
       <DayClock />
       <StaminaDial />
       <InventoryStrip />
-      <MicButton />
+      {VOICE_ENABLED && <MicButton />}
 
       {resting && <div className="resting-chip">🔥 resting by the fire — energy ×3</div>}
       {prompt && (
@@ -197,7 +198,7 @@ export function HUD() {
         <div><kbd>shift</kbd> run · <kbd>space</kbd> hop · <kbd>Q</kbd> wave</div>
         <div><kbd>E</kbd> interact · <kbd>B</kbd> cairn · <kbd>C</kbd> craft</div>
         <div><kbd>R</kbd> fix rope · <kbd>T</kbd> pitch tent · <kbd>M</kbd> sound</div>
-        <div><kbd>V</kbd> hold to talk to nearby hikers</div>
+        {VOICE_ENABLED && <div><kbd>V</kbd> hold to talk to nearby hikers</div>}
       </div>
     </div>
   );
