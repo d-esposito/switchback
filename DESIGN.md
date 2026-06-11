@@ -10,12 +10,15 @@
 > synthesized WebAudio ambience + footsteps, wave emote, multiplayer presence
 > at ~5 Hz, wilderness-permit login + trail-artifact HUD.
 > Backlog: photo mode + journal, peak badges on packs, ranger quests, daily
-> challenges, proximity chat bubbles, map UI, fast travel, more peaks/biomes.
-> Voice chat is built but TABLED (VOICE_ENABLED=false): handshake retries
-> flooded the Convex mutation queue and starved movement sync. To revive:
-> connect only when a side has a live mic (presence flag), exponential
-> backoff on failed peers, batch ICE candidates — or move signaling off the
-> mutation queue entirely.
+> challenges, proximity chat bubbles, map UI, fast travel, more peaks/biomes,
+> TURN relay for strict-NAT voice peers (Cloudflare Realtime TURN key).
+>
+> **Architecture (June 2026):** hot/cold split. The hot path (presence
+> roster, ~12.5 Hz positions, voice signaling) rides one WebSocket per tab
+> to a PartyServer Durable Object on Cloudflare (`party/`). Convex keeps
+> everything durable. Voice chat is LIVE again: mesh WebRTC, mic-gated
+> connections (no signaling unless a side has a live mic), 30s backoff on
+> failures, batched ICE — signaling never touches the Convex mutation queue.
 
 *Named **Switchback** (early prototypes used the working title "Trailbound").*
 

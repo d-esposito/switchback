@@ -71,6 +71,10 @@ interface GameState {
   /** True while the mic is actually transmitting (V held or open mic). */
   micLive: boolean;
   setMicLive: (l: boolean) => void;
+
+  /** Bumped when a hiker joins/leaves so React remounts the remote list. */
+  rosterVersion: number;
+  setRosterVersion: (v: number) => void;
 }
 
 export const useGame = create<GameState>((set) => ({
@@ -106,6 +110,8 @@ export const useGame = create<GameState>((set) => ({
   setVoiceMode: (voiceMode) => set({ voiceMode }),
   micLive: false,
   setMicLive: (micLive) => set({ micLive }),
+  rosterVersion: 0,
+  setRosterVersion: (rosterVersion) => set({ rosterVersion }),
 }));
 
 /** One toast helper: shows a message and clears it after a few seconds. */

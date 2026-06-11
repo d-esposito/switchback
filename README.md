@@ -40,24 +40,33 @@ Dev console helpers (dev builds only): `window.__tbWarp = {x, z}`,
 ## Stack
 
 - **Client**: Vite + React + TypeScript + React Three Fiber
-- **Backend**: [Convex](https://convex.dev) (database, presence, world state)
-- **Hosting**: Vercel (frontend) + Convex Cloud (backend)
+- **Hot path**: [PartyServer](https://github.com/cloudflare/partykit) room on a
+  Cloudflare Durable Object (`party/`) — one WebSocket per tab carries the
+  roster, ~12.5 Hz position fan-out, and voice signaling
+- **Durable data**: [Convex](https://convex.dev) (profiles, inventory,
+  registers, cairns, ropes/tents, world clock)
+- **Hosting**: Vercel (frontend) + Cloudflare Workers (party) + Convex Cloud
 
 ## Development
 
 ```sh
-npm install
-npm run dev:backend   # convex dev — pushes functions, watches convex/
-npm run dev           # vite dev server
+npm install && (cd party && npm install)
+npm run dev:backend     # convex dev — pushes functions, watches convex/
+(cd party && npm run dev)  # Mountain room on 127.0.0.1:8787
+npm run dev             # vite dev server
 ```
 
-`npx convex dev` writes `.env.local` with `VITE_CONVEX_URL` (dev deployment).
+`npx convex dev` writes `.env.local` with `VITE_CONVEX_URL` (dev deployment);
+add `VITE_PARTY_HOST=127.0.0.1:8787` for the local party room.
 
 ## Deploy
 
 ```sh
-npx convex deploy     # backend → Convex prod
-vercel --prod         # frontend → Vercel (scope: d-espositos-projects)
+npx convex deploy            # durable backend → Convex prod
+(cd party && npm run deploy) # Mountain room → Cloudflare (personal account)
+vercel --prod                # frontend → Vercel (scope: d-espositos-projects)
 ```
 
-The Vercel project sets `VITE_CONVEX_URL` to the Convex **prod** deployment URL.
+Vercel env: `VITE_CONVEX_URL` → Convex prod, `VITE_PARTY_HOST` →
+`switchback-party.d-esposito.workers.dev` (preview env uses dev Convex but the
+same party worker).

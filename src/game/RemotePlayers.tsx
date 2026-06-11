@@ -1,58 +1,46 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
-import { useQuery } from "convex/react";
 import { Billboard, Text } from "@react-three/drei";
 import * as THREE from "three";
-import { api } from "../../convex/_generated/api";
 import { Character } from "./Character";
-import { useGame, type Colors } from "./store";
+import { useGame } from "./store";
+import { net, type RemoteState } from "./net";
 import { voiceLevelsRef } from "./sharedRefs";
-import { getPresenceKey } from "../lib/ids";
-import { REMOTE_STALE_MS } from "./config";
-
-interface RemotePlayer {
-  key: string;
-  name: string;
-  colors: Colors;
-  hatStyle: string;
-  x: number;
-  y: number;
-  z: number;
-  rotY: number;
-  anim: string;
-  lastSeen: number;
-}
 
 const NAME_TAG_DIST = 45;
 // beyond this, the remote teleported (or our tab was throttled) — snap, don't glide
 const SNAP_DIST = 8;
 
-function RemoteHiker({ p }: { p: RemotePlayer }) {
+/**
+ * One remote hiker. Position/anim arrive over the party socket into
+ * net.roster and are read here per-frame — movement never re-renders React.
+ */
+function RemoteHiker({ initial }: { initial: RemoteState }) {
   const group = useRef<THREE.Group>(null!);
   const tag = useRef<THREE.Group>(null!);
   const speakDot = useRef<THREE.Mesh>(null!);
   const speedRef = useRef(0);
-  // start at the first reported position so hikers don't slide in from origin
-  const current = useRef(new THREE.Vector3(p.x, p.y, p.z));
-  const target = useRef(new THREE.Vector3(p.x, p.y, p.z));
-  const targetRot = useRef(p.rotY);
-
-  target.current.set(p.x, p.y, p.z);
-  targetRot.current = p.rotY;
+  const animRef = useRef(initial.anim);
+  const current = useRef(new THREE.Vector3(initial.x, initial.y, initial.z));
+  const target = useRef(new THREE.Vector3(initial.x, initial.y, initial.z));
 
   useFrame(({ camera }, dt) => {
+    const live = net.roster.get(initial.key);
+    if (!live) return; // about to unmount on the next roster bump
+    target.current.set(live.x, live.y, live.z);
+    animRef.current = live.anim;
+
     const cur = current.current;
     const tgt = target.current;
-    // exponential smoothing toward the last server snapshot — at hiking
-    // speeds and ~5 Hz updates this reads as smooth, honest movement
-    const a = 1 - Math.exp(-dt * 8);
+    // exponential chase toward the latest snapshot — smooth at 12.5 Hz
+    const a = 1 - Math.exp(-dt * 10);
     const before = group.current.position.clone();
     if (cur.distanceTo(tgt) > SNAP_DIST) cur.copy(tgt);
     else cur.lerp(tgt, a);
     group.current.position.copy(cur);
     speedRef.current = dt > 0 ? before.distanceTo(cur) / dt : 0;
 
-    let dr = targetRot.current - group.current.rotation.y;
+    let dr = live.rotY - group.current.rotation.y;
     while (dr > Math.PI) dr -= Math.PI * 2;
     while (dr < -Math.PI) dr += Math.PI * 2;
     group.current.rotation.y += dr * Math.min(1, dt * 10);
@@ -60,18 +48,24 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
     tag.current.visible = camera.position.distanceTo(cur) < NAME_TAG_DIST;
 
     // voice indicator: glow + gentle pulse while this hiker is talking
-    const level = voiceLevelsRef.current[p.key] ?? 0;
+    const level = voiceLevelsRef.current[initial.key] ?? 0;
     const speaking = level > 0.035;
     speakDot.current.visible = speaking && tag.current.visible;
     if (speaking) {
-      const s = 1 + Math.min(0.8, level * 6);
-      speakDot.current.scale.setScalar(s);
+      speakDot.current.scale.setScalar(1 + Math.min(0.8, level * 6));
     }
   });
 
   return (
     <group ref={group}>
-      <Character colors={p.colors} hatStyle={p.hatStyle} anim={p.anim} speedRef={speedRef} lampGlow />
+      <Character
+        colors={initial.colors}
+        hatStyle={initial.hatStyle}
+        anim="idle"
+        animRef={animRef}
+        speedRef={speedRef}
+        lampGlow
+      />
       <group ref={tag}>
         <Billboard position={[0, 2.05, 0]}>
           <Text
@@ -81,7 +75,7 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
             outlineColor="#1f1a12"
             anchorX="center"
           >
-            {p.name}
+            {initial.name}
           </Text>
         </Billboard>
         <mesh ref={speakDot} position={[0, 2.32, 0]} visible={false}>
@@ -94,22 +88,18 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
 }
 
 export function RemotePlayers() {
-  const players = useQuery(api.presence.list) as RemotePlayer[] | undefined;
-  const setOnlineCount = useGame((s) => s.setOnlineCount);
-  const self = useMemo(getPresenceKey, []);
+  // re-renders only when someone joins or leaves, never on movement
+  useGame((s) => s.rosterVersion);
 
-  const visible = (players ?? []).filter(
-    (p) => p.key !== self && Date.now() - p.lastSeen < REMOTE_STALE_MS
-  );
-
-  useEffect(() => {
-    setOnlineCount(visible.length + 1);
-  }, [visible.length, setOnlineCount]);
+  const players = [...net.roster.values()];
+  if (import.meta.env.DEV) {
+    (window as unknown as Record<string, unknown>).__remotes = players.map((p) => p.key);
+  }
 
   return (
     <>
-      {visible.map((p) => (
-        <RemoteHiker key={p.key} p={p} />
+      {players.map((p) => (
+        <RemoteHiker key={p.key} initial={p} />
       ))}
     </>
   );
