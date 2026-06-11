@@ -60,3 +60,9 @@ export const CAMPFIRE_RADIUS = 6;
 export const SEND_MIN_INTERVAL_MS = 200; // ~5 Hz while moving
 export const IDLE_HEARTBEAT_MS = 10_000;
 export const REMOTE_STALE_MS = 45_000;
+
+// Proximity voice chat is tabled for now: peer handshake retries were
+// flooding the shared Convex mutation queue and starving movement updates.
+// Before re-enabling: connect only when a side has a live mic (presence
+// flag), add exponential backoff on failed peers, and batch ICE candidates.
+export const VOICE_ENABLED = false;

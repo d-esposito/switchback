@@ -9,6 +9,7 @@ import { VoiceController } from "./game/VoiceController";
 import { Game } from "./game/Game";
 import { useGame, type Profile } from "./game/store";
 import { presenceRef } from "./game/sharedRefs";
+import { VOICE_ENABLED } from "./game/config";
 import { getDeviceId, getPresenceKey } from "./lib/ids";
 
 /** Mirrors the player's server-side inventory/gear into the UI store. */
@@ -86,7 +87,7 @@ export default function App() {
       <RegisterPanel />
       <CraftPanel />
       <PlayerData />
-      <VoiceController />
+      {VOICE_ENABLED && <VoiceController />}
     </>
   );
 }

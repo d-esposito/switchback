@@ -11,6 +11,11 @@
 > at ~5 Hz, wilderness-permit login + trail-artifact HUD.
 > Backlog: photo mode + journal, peak badges on packs, ranger quests, daily
 > challenges, proximity chat bubbles, map UI, fast travel, more peaks/biomes.
+> Voice chat is built but TABLED (VOICE_ENABLED=false): handshake retries
+> flooded the Convex mutation queue and starved movement sync. To revive:
+> connect only when a side has a live mic (presence flag), exponential
+> backoff on failed peers, batch ICE candidates — or move signaling off the
+> mutation queue entirely.
 
 *Named **Switchback** (early prototypes used the working title "Trailbound").*
 
