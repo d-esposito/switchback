@@ -125,7 +125,7 @@ export function HUD() {
   return (
     <div className="hud">
       <div className="plaque">
-        <div className="title">⛰ Trailbound</div>
+        <div className="title">⛰ Switchback</div>
         <div className="sub">
           <b>{onlineCount}</b> hiker{onlineCount === 1 ? "" : "s"} on the mountain
         </div>

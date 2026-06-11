@@ -23,11 +23,13 @@ function PlayerData() {
   return null;
 }
 
-const PROFILE_KEY = "trailbound:profile";
+const PROFILE_KEY = "switchback:profile";
+const LEGACY_PROFILE_KEY = "trailbound:profile";
 
 function loadProfile(): Profile | null {
   try {
-    const raw = localStorage.getItem(PROFILE_KEY);
+    const raw =
+      localStorage.getItem(PROFILE_KEY) ?? localStorage.getItem(LEGACY_PROFILE_KEY);
     return raw ? (JSON.parse(raw) as Profile) : null;
   } catch {
     return null;

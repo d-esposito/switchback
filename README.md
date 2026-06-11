@@ -1,4 +1,4 @@
-# Trailbound (hiking-game)
+# Switchback
 
 A cozy, browser-based, open-world 3D multiplayer hiking game. See [DESIGN.md](DESIGN.md)
 for the full design doc and phased plan.

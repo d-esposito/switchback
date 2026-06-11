@@ -122,7 +122,7 @@ export function LoginScreen({ initial, joining, onBegin }: LoginScreenProps) {
         >
           <p className="eyebrow">Wilderness permit · Crown Peak District</p>
           <h1>
-            Trail<span>bound</span>
+            Switch<span>back</span>
           </h1>
 
           <div className="field">
