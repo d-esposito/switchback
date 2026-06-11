@@ -7,7 +7,7 @@ import { Character } from "./Character";
 import { heightAt, normalAt } from "./terrain";
 import { useGame, timeOfDay, showToast } from "./store";
 import { weatherAt } from "./weather";
-import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef } from "./sharedRefs";
+import { playerPosRef, presenceRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef } from "./sharedRefs";
 import { isAvailable, collect, type ResourceNode } from "./resources";
 import { getDeviceId } from "../lib/ids";
 import {
@@ -68,7 +68,7 @@ export function LocalPlayer() {
 
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
-  const move = useMutation(api.players.move);
+  const move = useMutation(api.presence.move);
   const gatherMut = useMutation(api.crafting.gather);
   const placeRopeMut = useMutation(api.crafting.placeRope);
   const placeTentMut = useMutation(api.crafting.placeTent);
@@ -390,20 +390,25 @@ export function LocalPlayer() {
       }
     }
 
-    // --- network sync: ~5 Hz while moving, slow heartbeat while idle ---
+    // --- network sync: ~5 Hz while moving, instant on anim transitions
+    // (start/stop/jump/wave), slow heartbeat while idle ---
     const now = performance.now();
     const ls = lastSent.current;
+    const animChanged = anim.current !== ls.anim;
     const movedEnough =
       Math.hypot(p.x - ls.x, p.y - ls.y, p.z - ls.z) > 0.3 ||
-      Math.abs(heading.current - ls.rotY) > 0.2 ||
-      anim.current !== ls.anim;
-    const due = now - ls.t > (movedEnough ? SEND_MIN_INTERVAL_MS : IDLE_HEARTBEAT_MS);
-    if (due && (movedEnough || now - ls.t > IDLE_HEARTBEAT_MS)) {
+      Math.abs(heading.current - ls.rotY) > 0.2;
+    const due =
+      animChanged || // e.g. stopping — pins the exact end position immediately
+      (movedEnough && now - ls.t > SEND_MIN_INTERVAL_MS) ||
+      now - ls.t > IDLE_HEARTBEAT_MS;
+    if (due && presenceRef.current) {
       lastSent.current = {
         t: now, x: p.x, y: p.y, z: p.z, rotY: heading.current, anim: anim.current,
       };
       void move({
-        deviceId, x: p.x, y: p.y, z: p.z, rotY: heading.current, anim: anim.current,
+        id: presenceRef.current,
+        x: p.x, y: p.y, z: p.z, rotY: heading.current, anim: anim.current,
       });
     }
   });
