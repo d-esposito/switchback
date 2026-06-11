@@ -9,6 +9,18 @@ export const colorsValidator = v.object({
   pack: v.string(),
 });
 
+export const inventoryValidator = v.object({
+  sticks: v.number(),
+  stones: v.number(),
+  thatch: v.number(),
+});
+
+export const gearValidator = v.object({
+  walkingStick: v.boolean(),
+  ropes: v.number(),
+  tents: v.number(),
+});
+
 export default defineSchema({
   // kept from the infra-check page; harmless
   counters: defineTable({
@@ -33,6 +45,8 @@ export default defineSchema({
     rotY: v.number(),
     anim: v.string(),
     lastSeen: v.number(),
+    inventory: v.optional(inventoryValidator),
+    gear: v.optional(gearValidator),
   })
     .index("by_deviceId", ["deviceId"])
     .index("by_lastSeen", ["lastSeen"]),
@@ -52,5 +66,22 @@ export default defineSchema({
     z: v.number(),
     builtBy: v.string(),
     builtAt: v.number(),
+  }),
+
+  // player-placed gear, visible to (and usable by) everyone
+  ropes: defineTable({
+    x: v.number(),
+    y: v.number(),
+    z: v.number(),
+    placedBy: v.string(),
+    placedAt: v.number(),
+  }),
+
+  tents: defineTable({
+    x: v.number(),
+    y: v.number(),
+    z: v.number(),
+    placedBy: v.string(),
+    placedAt: v.number(),
   }),
 });

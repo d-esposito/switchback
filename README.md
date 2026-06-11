@@ -11,8 +11,24 @@ no purchase. E signs summit registers (Crown Peak, Outlook Knob), B stacks a
 persistent cairn, Q waves. One shared world clock for everyone: headlamps come on
 at dusk, the same sunset for every hiker. Campfires triple stamina regen.
 
+**Weather** is derived from the shared clock (no DB state): mist and rain roll
+through on 2.5-minute fronts, identical for every player. Wet rock makes
+climbing drain 40% more.
+
+**Gathering & crafting**: E gathers sticks (forest floor), stones (rocky
+slopes), and thatch (meadow tufts) — nodes respawn after ~3 minutes. C at a
+campfire or tent opens the workbench: walking stick (gentler scrambles),
+rope coil (R fixes a line on steep rock that every hiker climbs faster), tent
+(T pitches a shared rest camp). Inventory and gear persist server-side.
+
+**Wildlife & sound**: deer wander the meadows and flee if you charge, bird
+flocks circle the valley, fireflies rise near the lake at night. All ambience
+is synthesized in WebAudio (wind by altitude, rain, birdsong, crickets,
+campfire crackle, footsteps by surface) — M toggles sound.
+
 Dev console helpers (dev builds only): `window.__tbWarp = {x, z}`,
-`window.__tbLook = {yaw, pitch}`, `window.__tb` (live state readout), and
+`window.__tbLook = {yaw, pitch}`, `window.__tb` (live state readout),
+`window.__tbWeather = {rain, mist}`, and
 `npx convex run world:nudge '{"toPhase":0.75}'` to jump the shared clock.
 
 ## Stack

@@ -1,4 +1,5 @@
 import { SPAWN } from "./config";
+import type { ResourceNode } from "./resources";
 
 /**
  * Mutable per-frame state shared between scene systems without causing React
@@ -7,3 +8,16 @@ import { SPAWN } from "./config";
 export const playerPosRef = {
   current: { x: SPAWN.x, y: 0, z: SPAWN.z },
 };
+
+/** All resource nodes (set once by <Resources/>). */
+export const resourceNodesRef = { current: [] as ResourceNode[] };
+
+/** Bumped whenever a node is collected/respawned so <Resources/> rebuilds. */
+export const resourceVersionRef = { current: 0 };
+
+/** Placed gear positions, mirrored from Convex queries for frame-loop reads. */
+export const ropesRef = { current: [] as { x: number; y: number; z: number }[] };
+export const tentsRef = { current: [] as { x: number; y: number; z: number }[] };
+
+/** Step pulse counter — incremented by LocalPlayer on each footfall (audio). */
+export const stepRef = { current: 0, surface: "grass" as "grass" | "rock" | "snow" };

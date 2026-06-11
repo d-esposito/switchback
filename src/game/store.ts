@@ -51,6 +51,18 @@ interface GameState {
 
   toast: string | null;
   setToast: (t: string | null) => void;
+
+  inventory: { sticks: number; stones: number; thatch: number };
+  setInventory: (i: GameState["inventory"]) => void;
+
+  gear: { walkingStick: boolean; ropes: number; tents: number };
+  setGear: (g: GameState["gear"]) => void;
+
+  craftOpen: boolean;
+  setCraftOpen: (o: boolean) => void;
+
+  audioOn: boolean;
+  setAudioOn: (a: boolean) => void;
 }
 
 export const useGame = create<GameState>((set) => ({
@@ -74,7 +86,23 @@ export const useGame = create<GameState>((set) => ({
   setOnlineCount: (onlineCount) => set({ onlineCount }),
   toast: null,
   setToast: (toast) => set({ toast }),
+  inventory: { sticks: 0, stones: 0, thatch: 0 },
+  setInventory: (inventory) => set({ inventory }),
+  gear: { walkingStick: false, ropes: 0, tents: 0 },
+  setGear: (gear) => set({ gear }),
+  craftOpen: false,
+  setCraftOpen: (craftOpen) => set({ craftOpen }),
+  audioOn: true,
+  setAudioOn: (audioOn) => set({ audioOn }),
 }));
+
+/** One toast helper: shows a message and clears it after a few seconds. */
+let toastTimer: ReturnType<typeof setTimeout> | undefined;
+export function showToast(message: string, ms = 3200): void {
+  useGame.getState().setToast(message);
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => useGame.getState().setToast(null), ms);
+}
 
 /** Time of day in [0,1): 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset. */
 export function timeOfDay(clock: WorldClock | null): number {

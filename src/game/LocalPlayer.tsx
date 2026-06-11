@@ -5,8 +5,10 @@ import * as THREE from "three";
 import { api } from "../../convex/_generated/api";
 import { Character } from "./Character";
 import { heightAt, normalAt } from "./terrain";
-import { useGame, timeOfDay } from "./store";
-import { playerPosRef } from "./sharedRefs";
+import { useGame, timeOfDay, showToast } from "./store";
+import { weatherAt } from "./weather";
+import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef } from "./sharedRefs";
+import { isAvailable, collect, type ResourceNode } from "./resources";
 import { getDeviceId } from "../lib/ids";
 import {
   SPAWN, PEAKS, CAMPFIRE, PLAY_RADIUS,
@@ -18,6 +20,33 @@ import {
 
 const CAM_DIST = 5.4;
 const REGISTER_RADIUS = 4;
+const GATHER_RADIUS = 2.5;
+const ROPE_ASSIST_RADIUS = 5;
+const TENT_AURA_RADIUS = 5;
+
+const KIND_LABEL: Record<ResourceNode["kind"], string> = {
+  sticks: "a stick",
+  stones: "a stone",
+  thatch: "thatch",
+};
+
+function nearestNode(x: number, z: number): ResourceNode | null {
+  let best: ResourceNode | null = null;
+  let bestD = GATHER_RADIUS;
+  for (const n of resourceNodesRef.current) {
+    if (!isAvailable(n)) continue;
+    const d = Math.hypot(n.x - x, n.z - z);
+    if (d < bestD) {
+      bestD = d;
+      best = n;
+    }
+  }
+  return best;
+}
+
+function nearAny(list: { x: number; z: number }[], x: number, z: number, r: number): boolean {
+  return list.some((p) => Math.hypot(p.x - x, p.z - z) < r);
+}
 
 export function LocalPlayer() {
   const group = useRef<THREE.Group>(null!);
@@ -32,6 +61,7 @@ export function LocalPlayer() {
   const stamina = useRef(100);
   const anim = useRef("idle");
   const waveUntil = useRef(0);
+  const stepPhase = useRef(0);
   const lamp = useRef<THREE.SpotLight>(null!);
   const lampTarget = useRef<THREE.Object3D>(null!);
   const lastSent = useRef({ t: 0, x: 0, y: 0, z: 0, rotY: 0, anim: "idle" });
@@ -39,6 +69,9 @@ export function LocalPlayer() {
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
   const move = useMutation(api.players.move);
+  const gatherMut = useMutation(api.crafting.gather);
+  const placeRopeMut = useMutation(api.crafting.placeRope);
+  const placeTentMut = useMutation(api.crafting.placeTent);
   const deviceId = useMemo(getDeviceId, []);
 
   const setStamina = useGame((s) => s.setStamina);
@@ -64,21 +97,67 @@ export function LocalPlayer() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       keys.current[e.code] = true;
+      const p = pos.current;
+      const state = useGame.getState();
+
       if (e.code === "KeyE") {
         const near = PEAKS.find(
-          (pk) => Math.hypot(pos.current.x - pk.x, pos.current.z - pk.z) < REGISTER_RADIUS
+          (pk) => Math.hypot(p.x - pk.x, p.z - pk.z) < REGISTER_RADIUS
         );
         if (near) {
           setActivePeak(near.id);
           document.exitPointerLock();
+          return;
+        }
+        const node = nearestNode(p.x, p.z);
+        if (node) {
+          collect(node);
+          resourceVersionRef.current += 1;
+          void gatherMut({ deviceId, kind: node.kind });
+          showToast(`Gathered ${KIND_LABEL[node.kind]}.`);
+        }
+      }
+      if (e.code === "KeyC") {
+        const atCamp =
+          Math.hypot(p.x - CAMPFIRE.x, p.z - CAMPFIRE.z) < CAMPFIRE_RADIUS ||
+          nearAny(tentsRef.current, p.x, p.z, TENT_AURA_RADIUS);
+        if (atCamp) {
+          state.setCraftOpen(true);
+          document.exitPointerLock();
+        } else {
+          showToast("Find a campfire or tent to craft.");
+        }
+      }
+      if (e.code === "KeyR") {
+        if (state.gear.ropes < 1) {
+          showToast("No rope coils — craft one at a campfire (1 stick + 4 thatch).");
+        } else if (normalAt(p.x, p.z).y >= SCRAMBLE_NY) {
+          showToast("Ropes anchor on steep ground — find a slope.");
+        } else {
+          void placeRopeMut({ deviceId, x: p.x, y: p.y, z: p.z });
+          showToast("Fixed line placed. Any hiker can use it.");
+        }
+      }
+      if (e.code === "KeyT") {
+        if (state.gear.tents < 1) {
+          showToast("No tent — craft one at a campfire (5 sticks + 4 thatch).");
+        } else if (normalAt(p.x, p.z).y < 0.82) {
+          showToast("Too steep to pitch a tent here.");
+        } else {
+          void placeTentMut({ deviceId, x: p.x, y: p.y, z: p.z });
+          showToast("Tent pitched — a camp for every hiker.");
         }
       }
       if (e.code === "KeyQ") waveUntil.current = performance.now() + 1900;
-      if (e.code === "Escape") setActivePeak(null);
+      if (e.code === "Escape") {
+        setActivePeak(null);
+        state.setCraftOpen(false);
+      }
     };
     const up = (e: KeyboardEvent) => (keys.current[e.code] = false);
     const click = () => {
-      if (!useGame.getState().activePeak) gl.domElement.requestPointerLock();
+      const s = useGame.getState();
+      if (!s.activePeak && !s.craftOpen) gl.domElement.requestPointerLock();
     };
     const lockChange = () => setPointerLocked(document.pointerLockElement === gl.domElement);
     const mouse = (e: MouseEvent) => {
@@ -98,7 +177,7 @@ export function LocalPlayer() {
       document.removeEventListener("pointerlockchange", lockChange);
       gl.domElement.removeEventListener("click", click);
     };
-  }, [gl, setPointerLocked, setActivePeak]);
+  }, [gl, setPointerLocked, setActivePeak, deviceId, gatherMut, placeRopeMut, placeTentMut]);
 
   // wire the spotlight to its target object (both exist after first mount)
   useEffect(() => {
@@ -134,7 +213,8 @@ export function LocalPlayer() {
     if (k.KeyS) iz += 1;
     if (k.KeyA) ix -= 1;
     if (k.KeyD) ix += 1;
-    const hasInput = (ix !== 0 || iz !== 0) && !useGame.getState().activePeak;
+    const ui = useGame.getState();
+    const hasInput = (ix !== 0 || iz !== 0) && !ui.activePeak && !ui.craftOpen;
 
     const wantRun = !!k.ShiftLeft || !!k.ShiftRight;
     const canRun = stamina.current > 0.5;
@@ -157,12 +237,15 @@ export function LocalPlayer() {
 
       if (uphill && aheadNY < BLOCK_NY) {
         if (stamina.current > 1 && grounded.current) {
-          // climbing: slow, expensive, possible only while stamina lasts
+          // climbing: slow, expensive, possible only while stamina lasts.
+          // A fixed line placed by any hiker makes the going faster.
           climbing = true;
-          const scale = (CLIMB_SPEED * dt) / Math.hypot(dx, dz);
+          const roped = nearAny(ropesRef.current, p.x, p.z, ROPE_ASSIST_RADIUS);
+          const climbSpeed = CLIMB_SPEED * (roped ? 1.35 : 1);
+          const scale = (climbSpeed * dt) / Math.hypot(dx, dz);
           dx *= scale;
           dz *= scale;
-          speed = CLIMB_SPEED;
+          speed = climbSpeed;
         } else {
           // no strength left — no purchase on the rock
           dx = 0;
@@ -213,11 +296,17 @@ export function LocalPlayer() {
     }
 
     // --- stamina ---
-    const nearFire = Math.hypot(p.x - CAMPFIRE.x, p.z - CAMPFIRE.z) < CAMPFIRE_RADIUS;
+    const nearFire =
+      Math.hypot(p.x - CAMPFIRE.x, p.z - CAMPFIRE.z) < CAMPFIRE_RADIUS ||
+      nearAny(tentsRef.current, p.x, p.z, TENT_AURA_RADIUS);
+    const rainNow = weatherAt(ui.clock).rain;
+    const roped = climbing && nearAny(ropesRef.current, p.x, p.z, ROPE_ASSIST_RADIUS);
     let ds = 0;
-    if (speed > WALK_SPEED + 0.1) ds -= STAMINA_RUN_DRAIN;
-    if (scrambling) ds -= STAMINA_SCRAMBLE_DRAIN;
-    if (climbing) ds -= STAMINA_CLIMB_DRAIN;
+    if (speed > WALK_SPEED + 0.1 && !climbing) ds -= STAMINA_RUN_DRAIN;
+    if (scrambling) ds -= STAMINA_SCRAMBLE_DRAIN * (ui.gear.walkingStick ? 0.65 : 1);
+    if (climbing) {
+      ds -= STAMINA_CLIMB_DRAIN * (rainNow > 0.05 ? 1.4 : 1) * (roped ? 0.5 : 1);
+    }
     if (ds === 0) {
       ds = hasInput ? STAMINA_REGEN_WALK : STAMINA_REGEN_IDLE;
       if (nearFire) ds *= CAMPFIRE_REGEN_MULT;
@@ -273,15 +362,33 @@ export function LocalPlayer() {
       lamp.current.position.set(p.x, p.y + 1.45, p.z);
     }
 
-    // --- interaction prompt ---
-    const nearPeak = PEAKS.find(
-      (pk) => Math.hypot(p.x - pk.x, p.z - pk.z) < REGISTER_RADIUS
-    );
-    setPrompt(
-      nearPeak && !useGame.getState().activePeak
-        ? `Press E — sign the ${nearPeak.name} register`
-        : null
-    );
+    // --- interaction prompt (register > gather > craft) ---
+    let promptText: string | null = null;
+    if (!ui.activePeak && !ui.craftOpen) {
+      const nearPeak = PEAKS.find(
+        (pk) => Math.hypot(p.x - pk.x, p.z - pk.z) < REGISTER_RADIUS
+      );
+      const node = nearPeak ? null : nearestNode(p.x, p.z);
+      if (nearPeak) {
+        promptText = `Press E — sign the ${nearPeak.name} register`;
+      } else if (node) {
+        promptText = `Press E — gather ${KIND_LABEL[node.kind]}`;
+      } else if (nearFire) {
+        promptText = "Press C — craft";
+      }
+    }
+    setPrompt(promptText);
+
+    // --- footstep pulses for the audio engine ---
+    if (grounded.current && speed > 0.5) {
+      const before = Math.sin(stepPhase.current);
+      stepPhase.current += dt * 2.1 * speed;
+      if (Math.sin(stepPhase.current) >= 0 && before < 0) {
+        stepRef.current += 1;
+        const h = heightAt(p.x, p.z);
+        stepRef.surface = h > 100 ? "snow" : nY < 0.62 || h > 68 ? "rock" : "grass";
+      }
+    }
 
     // --- network sync: ~5 Hz while moving, slow heartbeat while idle ---
     const now = performance.now();
@@ -309,7 +416,8 @@ export function LocalPlayer() {
         <Character
           colors={profile.colors}
           hatStyle={profile.hatStyle}
-          anim={anim.current}
+          anim="idle"
+          animRef={anim}
           speedRef={speedRef}
         />
       </group>

@@ -5,6 +5,11 @@ import { DayNight } from "./DayNight";
 import { LocalPlayer } from "./LocalPlayer";
 import { RemotePlayers } from "./RemotePlayers";
 import { Cairns } from "./Cairns";
+import { Rain } from "./Rain";
+import { ResourceNodes } from "./ResourceNodes";
+import { PlacedProps } from "./PlacedProps";
+import { Wildlife } from "./Wildlife";
+import { AudioController } from "./AudioController";
 import { Campfire, FireLookout, SummitRegister, TrailheadSign } from "./Landmarks";
 import { PEAKS } from "./config";
 
@@ -28,6 +33,11 @@ export function Game() {
       <TrailheadSign />
       <FireLookout />
       <Cairns />
+      <Rain />
+      <ResourceNodes />
+      <PlacedProps />
+      <Wildlife />
+      <AudioController />
       <LocalPlayer />
       <RemotePlayers />
     </Canvas>

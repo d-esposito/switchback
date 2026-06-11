@@ -1,12 +1,16 @@
 # Trailbound — Design & Technical Plan
 
-> **Status (June 2026):** Phases 2–3 and the first slice of phase 4 are live.
-> Shipped: seeded open world (Crown Peak + Outlook Knob + lake + fire lookout),
-> hiker controller with stamina + scramble + summit-wall climbing, shared
-> day/night clock with headlamps, campfire regen, summit registers with live
-> signatures, persistent cairns, wave emote, multiplayer presence at ~5 Hz,
-> wilderness-permit login + trail-artifact HUD. Backlog: weather, crafting/gear,
-> photo mode, wildlife, ranger quests, daily challenges, audio.
+> **Status (June 2026):** Phases 2–4 are live. Shipped: seeded open world
+> (Crown Peak + Outlook Knob + lake + fire lookout), hiker controller with
+> stamina + scramble + summit-wall climbing, shared day/night clock with
+> headlamps, clock-derived shared weather (mist/rain fronts, wet-rock climbing),
+> campfire regen, summit registers with live signatures, persistent cairns,
+> resource gathering (sticks/stones/thatch) + crafting (walking stick, shared
+> rope lines, shared tents), ambient wildlife (deer/birds/fireflies),
+> synthesized WebAudio ambience + footsteps, wave emote, multiplayer presence
+> at ~5 Hz, wilderness-permit login + trail-artifact HUD.
+> Backlog: photo mode + journal, peak badges on packs, ranger quests, daily
+> challenges, proximity chat bubbles, map UI, fast travel, more peaks/biomes.
 
 *Working title ideas: Trailbound, Switchback, Golden Hour, Wayfind, Scree, Basecamp*
 
