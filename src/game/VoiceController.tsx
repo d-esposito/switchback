@@ -4,14 +4,15 @@ import { api } from "../../convex/_generated/api";
 import { voice } from "./voice";
 import { useGame, showToast } from "./store";
 import { playerPosRef, voiceLevelsRef } from "./sharedRefs";
-import { getDeviceId } from "../lib/ids";
+import { getPresenceKey } from "../lib/ids";
 import { REMOTE_STALE_MS } from "./config";
 
 /** Bridges the WebRTC voice mesh to Convex signaling and game state. */
 export function VoiceController() {
-  const deviceId = useMemo(getDeviceId, []);
-  const players = useQuery(api.players.list);
-  const signals = useQuery(api.voice.forMe, { deviceId });
+  // voice peers are per-tab, matching presence identity
+  const presenceKey = useMemo(getPresenceKey, []);
+  const players = useQuery(api.presence.list);
+  const signals = useQuery(api.voice.forMe, { deviceId: presenceKey });
   const send = useMutation(api.voice.send);
   const consume = useMutation(api.voice.consume);
   const setMicLive = useGame((s) => s.setMicLive);
@@ -20,11 +21,11 @@ export function VoiceController() {
 
   // wire the manager's outbound signaling to Convex
   useEffect(() => {
-    voice.setMyId(deviceId);
+    voice.setMyId(presenceKey);
     voice.sendSignal = (to, kind, payload) => {
-      void send({ to, from: deviceId, kind, payload });
+      void send({ to, from: presenceKey, kind, payload });
     };
-  }, [deviceId, send]);
+  }, [presenceKey, send]);
 
   // apply inbound signals, then delete them
   useEffect(() => {
@@ -40,15 +41,15 @@ export function VoiceController() {
   // proximity reconciliation + speaking levels + HUD mic state
   useEffect(() => {
     const tick = setInterval(() => {
-      const list = (playersRef.current ?? []).filter(
-        (p) => p.deviceId !== deviceId && Date.now() - p.lastSeen < REMOTE_STALE_MS
-      );
+      const list = (playersRef.current ?? [])
+        .filter((p) => p.key !== presenceKey && Date.now() - p.lastSeen < REMOTE_STALE_MS)
+        .map((p) => ({ deviceId: p.key, x: p.x, z: p.z }));
       voice.updateProximity(playerPosRef.current, list);
       voiceLevelsRef.current = voice.levels();
       setMicLive(voice.isLive());
     }, 350);
     return () => clearInterval(tick);
-  }, [deviceId, setMicLive]);
+  }, [presenceKey, setMicLive]);
 
   // V = push-to-talk; any gesture also retries blocked audio playback
   useEffect(() => {

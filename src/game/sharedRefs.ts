@@ -1,5 +1,6 @@
 import { SPAWN } from "./config";
 import type { ResourceNode } from "./resources";
+import type { Id } from "../../convex/_generated/dataModel";
 
 /**
  * Mutable per-frame state shared between scene systems without causing React
@@ -22,5 +23,8 @@ export const tentsRef = { current: [] as { x: number; y: number; z: number }[] }
 /** Step pulse counter — incremented by LocalPlayer on each footfall (audio). */
 export const stepRef = { current: 0, surface: "grass" as "grass" | "rock" | "snow" };
 
-/** Live voice activity per remote deviceId (0..~1), written by VoiceController. */
+/** Live voice activity per remote presence key (0..~1), written by VoiceController. */
 export const voiceLevelsRef = { current: {} as Record<string, number> };
+
+/** This tab's presence row id, set after presence.join succeeds. */
+export const presenceRef = { current: null as Id<"presence"> | null };

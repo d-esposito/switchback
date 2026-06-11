@@ -7,11 +7,11 @@ import { api } from "../../convex/_generated/api";
 import { Character } from "./Character";
 import { useGame, type Colors } from "./store";
 import { voiceLevelsRef } from "./sharedRefs";
-import { getDeviceId } from "../lib/ids";
+import { getPresenceKey } from "../lib/ids";
 import { REMOTE_STALE_MS } from "./config";
 
 interface RemotePlayer {
-  deviceId: string;
+  key: string;
   name: string;
   colors: Colors;
   hatStyle: string;
@@ -24,6 +24,8 @@ interface RemotePlayer {
 }
 
 const NAME_TAG_DIST = 45;
+// beyond this, the remote teleported (or our tab was throttled) — snap, don't glide
+const SNAP_DIST = 8;
 
 function RemoteHiker({ p }: { p: RemotePlayer }) {
   const group = useRef<THREE.Group>(null!);
@@ -45,7 +47,8 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
     // speeds and ~5 Hz updates this reads as smooth, honest movement
     const a = 1 - Math.exp(-dt * 8);
     const before = group.current.position.clone();
-    cur.lerp(tgt, a);
+    if (cur.distanceTo(tgt) > SNAP_DIST) cur.copy(tgt);
+    else cur.lerp(tgt, a);
     group.current.position.copy(cur);
     speedRef.current = dt > 0 ? before.distanceTo(cur) / dt : 0;
 
@@ -57,7 +60,7 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
     tag.current.visible = camera.position.distanceTo(cur) < NAME_TAG_DIST;
 
     // voice indicator: glow + gentle pulse while this hiker is talking
-    const level = voiceLevelsRef.current[p.deviceId] ?? 0;
+    const level = voiceLevelsRef.current[p.key] ?? 0;
     const speaking = level > 0.035;
     speakDot.current.visible = speaking && tag.current.visible;
     if (speaking) {
@@ -91,12 +94,12 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
 }
 
 export function RemotePlayers() {
-  const players = useQuery(api.players.list) as RemotePlayer[] | undefined;
+  const players = useQuery(api.presence.list) as RemotePlayer[] | undefined;
   const setOnlineCount = useGame((s) => s.setOnlineCount);
-  const self = useMemo(getDeviceId, []);
+  const self = useMemo(getPresenceKey, []);
 
   const visible = (players ?? []).filter(
-    (p) => p.deviceId !== self && Date.now() - p.lastSeen < REMOTE_STALE_MS
+    (p) => p.key !== self && Date.now() - p.lastSeen < REMOTE_STALE_MS
   );
 
   useEffect(() => {
@@ -106,7 +109,7 @@ export function RemotePlayers() {
   return (
     <>
       {visible.map((p) => (
-        <RemoteHiker key={p.deviceId} p={p} />
+        <RemoteHiker key={p.key} p={p} />
       ))}
     </>
   );

@@ -8,7 +8,8 @@ import { CraftPanel } from "./ui/CraftPanel";
 import { VoiceController } from "./game/VoiceController";
 import { Game } from "./game/Game";
 import { useGame, type Profile } from "./game/store";
-import { getDeviceId } from "./lib/ids";
+import { presenceRef } from "./game/sharedRefs";
+import { getDeviceId, getPresenceKey } from "./lib/ids";
 
 /** Mirrors the player's server-side inventory/gear into the UI store. */
 function PlayerData() {
@@ -43,6 +44,7 @@ export default function App() {
   const [saved] = useState(loadProfile);
 
   const join = useMutation(api.players.join);
+  const joinPresence = useMutation(api.presence.join);
   const ensureWorld = useMutation(api.world.ensure);
   const world = useQuery(api.world.get);
 
@@ -60,11 +62,13 @@ export default function App() {
     try {
       localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
       setProfile(profile);
-      const [resume] = await Promise.all([
+      const [, pres] = await Promise.all([
         join({ deviceId: getDeviceId(), ...profile }),
+        joinPresence({ key: getPresenceKey(), deviceId: getDeviceId(), ...profile }),
         ensureWorld(),
       ]);
-      setResumeAt(resume);
+      presenceRef.current = pres.id;
+      setResumeAt(pres.resume);
       setStage("game");
     } finally {
       setJoining(false);

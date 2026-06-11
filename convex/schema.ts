@@ -34,7 +34,31 @@ export default defineSchema({
     dayLengthMs: v.number(),
   }),
 
+  // COLD per-device profile: name, appearance, inventory, gear. Written on
+  // login and on gather/craft — never by movement.
   players: defineTable({
+    deviceId: v.string(),
+    name: v.string(),
+    colors: colorsValidator,
+    hatStyle: v.string(),
+    // legacy position fields from before the presence split; unused
+    x: v.optional(v.number()),
+    y: v.optional(v.number()),
+    z: v.optional(v.number()),
+    rotY: v.optional(v.number()),
+    anim: v.optional(v.string()),
+    lastSeen: v.number(),
+    inventory: v.optional(inventoryValidator),
+    gear: v.optional(gearValidator),
+  })
+    .index("by_deviceId", ["deviceId"])
+    .index("by_lastSeen", ["lastSeen"]),
+
+  // HOT presence: one row per open game tab, written at ~5 Hz while moving.
+  // Kept separate from `players` so movement never invalidates inventory
+  // queries, and gathering never re-pushes the player list to every client.
+  presence: defineTable({
+    key: v.string(), // deviceId#tab — unique per open tab
     deviceId: v.string(),
     name: v.string(),
     colors: colorsValidator,
@@ -45,10 +69,8 @@ export default defineSchema({
     rotY: v.number(),
     anim: v.string(),
     lastSeen: v.number(),
-    inventory: v.optional(inventoryValidator),
-    gear: v.optional(gearValidator),
   })
-    .index("by_deviceId", ["deviceId"])
+    .index("by_key", ["key"])
     .index("by_lastSeen", ["lastSeen"]),
 
   signatures: defineTable({
