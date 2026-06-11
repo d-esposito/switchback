@@ -16,7 +16,31 @@ interface CharacterProps {
   animRef?: React.RefObject<string>;
   /** Optional: live speed for foot-sync; falls back to anim presets */
   speedRef?: React.RefObject<number>;
+  /**
+   * Render a visible headlamp glow at night (remote hikers). The glow sprite
+   * scales with camera distance and ignores fog, so lamps read as bright
+   * points across the whole valley — plus real light on the ground up close.
+   */
+  lampGlow?: boolean;
 }
+
+let glowTexture: THREE.CanvasTexture | null = null;
+function getGlowTexture(): THREE.CanvasTexture {
+  if (glowTexture) return glowTexture;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const g = c.getContext("2d")!;
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, "rgba(255, 244, 214, 1)");
+  grad.addColorStop(0.3, "rgba(255, 226, 160, 0.5)");
+  grad.addColorStop(1, "rgba(255, 210, 120, 0)");
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  glowTexture = new THREE.CanvasTexture(c);
+  return glowTexture;
+}
+
+const worldPos = new THREE.Vector3();
 
 const ANIM_SPEED: Record<string, number> = {
   idle: 0, walk: 4.3, run: 7.6, jump: 2, climb: 2.2, wave: 0,
@@ -29,16 +53,18 @@ const BODY_Y = 0.78;
  * Procedural low-poly hiker, ~1.5m tall, feet at local origin.
  * All limbs are animated in code so we ship zero model assets.
  */
-export function Character({ colors, hatStyle, anim, animRef, speedRef }: CharacterProps) {
+export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow }: CharacterProps) {
   const legL = useRef<THREE.Group>(null!);
   const legR = useRef<THREE.Group>(null!);
   const armL = useRef<THREE.Group>(null!);
   const armR = useRef<THREE.Group>(null!);
   const body = useRef<THREE.Group>(null!);
   const lampDot = useRef<THREE.Mesh>(null!);
+  const glow = useRef<THREE.Sprite>(null!);
+  const glowLight = useRef<THREE.PointLight>(null!);
   const phase = useRef(Math.random() * 10);
 
-  useFrame((_, dt) => {
+  useFrame(({ camera }, dt) => {
     const a = animRef?.current ?? anim;
     const speed = speedRef?.current ?? ANIM_SPEED[a] ?? 0;
     const moving = speed > 0.3 && a !== "jump" && a !== "climb" && a !== "wave";
@@ -47,7 +73,21 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef }: Charact
 
     // headlamp dot glows from dusk to dawn for every hiker
     const elev = Math.sin((timeOfDay(useGame.getState().clock) - 0.25) * Math.PI * 2);
-    lampDot.current.visible = elev < 0.06;
+    const night = elev < 0.06;
+    lampDot.current.visible = night;
+
+    // distance-scaled glow halo: a lamp on a far ridge stays a visible point
+    if (lampGlow && glow.current) {
+      glow.current.visible = night;
+      if (night) {
+        glow.current.getWorldPosition(worldPos);
+        const dist = camera.position.distanceTo(worldPos);
+        glow.current.scale.setScalar(THREE.MathUtils.clamp(dist * 0.05, 0.6, 11));
+        glowLight.current.visible = dist < 30;
+      } else {
+        glowLight.current.visible = false;
+      }
+    }
 
     // wave is the only anim that twists the arm sideways — relax it otherwise
     if (a !== "wave") {
@@ -148,6 +188,32 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef }: Charact
             emissiveIntensity={3.5}
           />
         </mesh>
+
+        {/* remote hikers: visible lamp glow + real light on the ground nearby */}
+        {lampGlow && (
+          <>
+            <sprite ref={glow} position={[0, 0.72, 0.2]} visible={false}>
+              <spriteMaterial
+                map={getGlowTexture()}
+                color="#ffe2a8"
+                transparent
+                opacity={0.85}
+                blending={THREE.AdditiveBlending}
+                depthWrite={false}
+                fog={false}
+              />
+            </sprite>
+            <pointLight
+              ref={glowLight}
+              position={[0, 0.7, 0.5]}
+              color="#ffd9a0"
+              intensity={6}
+              distance={14}
+              decay={2}
+              visible={false}
+            />
+          </>
+        )}
 
         {/* hat */}
         {hatStyle === "cap" && (

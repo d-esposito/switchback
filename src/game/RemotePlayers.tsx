@@ -68,7 +68,7 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
 
   return (
     <group ref={group}>
-      <Character colors={p.colors} hatStyle={p.hatStyle} anim={p.anim} speedRef={speedRef} />
+      <Character colors={p.colors} hatStyle={p.hatStyle} anim={p.anim} speedRef={speedRef} lampGlow />
       <group ref={tag}>
         <Billboard position={[0, 2.05, 0]}>
           <Text
