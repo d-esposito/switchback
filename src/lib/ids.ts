@@ -24,5 +24,6 @@ export function getPresenceKey(): string {
     tab = Math.random().toString(36).slice(2, 8);
     sessionStorage.setItem(TAB_KEY, tab);
   }
-  return `${getDeviceId()}#${tab}`;
+  // "~" is URL-safe — these keys travel in WebSocket query strings
+  return `${getDeviceId()}~${tab}`;
 }

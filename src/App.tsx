@@ -8,9 +8,20 @@ import { CraftPanel } from "./ui/CraftPanel";
 import { VoiceController } from "./game/VoiceController";
 import { Game } from "./game/Game";
 import { useGame, type Profile } from "./game/store";
-import { presenceRef } from "./game/sharedRefs";
-import { VOICE_ENABLED } from "./game/config";
-import { getDeviceId, getPresenceKey } from "./lib/ids";
+import { net } from "./game/net";
+import { VOICE_ENABLED, SPAWN } from "./game/config";
+import { getDeviceId } from "./lib/ids";
+
+const LAST_POS_KEY = "switchback:lastPos";
+
+function loadLastPos(): { x: number; y: number; z: number; rotY: number } | null {
+  try {
+    const raw = sessionStorage.getItem(LAST_POS_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
 
 /** Mirrors the player's server-side inventory/gear into the UI store. */
 function PlayerData() {
@@ -45,7 +56,6 @@ export default function App() {
   const [saved] = useState(loadProfile);
 
   const join = useMutation(api.players.join);
-  const joinPresence = useMutation(api.presence.join);
   const ensureWorld = useMutation(api.world.ensure);
   const world = useQuery(api.world.get);
 
@@ -63,13 +73,11 @@ export default function App() {
     try {
       localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
       setProfile(profile);
-      const [, pres] = await Promise.all([
-        join({ deviceId: getDeviceId(), ...profile }),
-        joinPresence({ key: getPresenceKey(), deviceId: getDeviceId(), ...profile }),
-        ensureWorld(),
-      ]);
-      presenceRef.current = pres.id;
-      setResumeAt(pres.resume);
+      // Convex keeps the durable profile; the party room carries live presence
+      const resume = loadLastPos();
+      net.connect(profile, resume ?? { x: SPAWN.x, y: 0, z: SPAWN.z });
+      await Promise.all([join({ deviceId: getDeviceId(), ...profile }), ensureWorld()]);
+      setResumeAt(resume);
       setStage("game");
     } finally {
       setJoining(false);

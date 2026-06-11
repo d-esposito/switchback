@@ -1,55 +1,43 @@
-import { useEffect, useMemo, useRef } from "react";
-import { useMutation, useQuery } from "convex/react";
-import { api } from "../../convex/_generated/api";
+import { useEffect } from "react";
 import { voice } from "./voice";
+import { net } from "./net";
 import { useGame, showToast } from "./store";
 import { playerPosRef, voiceLevelsRef } from "./sharedRefs";
-import { getPresenceKey } from "../lib/ids";
-import { REMOTE_STALE_MS } from "./config";
 
-/** Bridges the WebRTC voice mesh to Convex signaling and game state. */
+/**
+ * Bridges the WebRTC voice mesh to the party socket. Signaling rides the
+ * same WebSocket as position sync — it never touches the Convex mutation
+ * queue — and peers only form when at least one side has a live mic.
+ */
 export function VoiceController() {
-  // voice peers are per-tab, matching presence identity
-  const presenceKey = useMemo(getPresenceKey, []);
-  const players = useQuery(api.presence.list);
-  const signals = useQuery(api.voice.forMe, { deviceId: presenceKey });
-  const send = useMutation(api.voice.send);
-  const consume = useMutation(api.voice.consume);
   const setMicLive = useGame((s) => s.setMicLive);
-  const playersRef = useRef(players);
-  playersRef.current = players;
 
-  // wire the manager's outbound signaling to Convex
+  // wire the manager to the socket
   useEffect(() => {
-    voice.setMyId(presenceKey);
-    voice.sendSignal = (to, kind, payload) => {
-      void send({ to, from: presenceKey, kind, payload });
+    voice.setMyId(net.key);
+    voice.sendSignal = (to, kind, payload) => net.sendSignal(to, kind, payload);
+    voice.onMicState = (on) => net.sendMic(on);
+    net.onSignal = (from, kind, payload) => void voice.handleSignal(from, kind, payload);
+    return () => {
+      net.onSignal = () => {};
     };
-  }, [presenceKey, send]);
-
-  // apply inbound signals, then delete them
-  useEffect(() => {
-    if (!signals || signals.length === 0) return;
-    (async () => {
-      for (const s of [...signals].sort((a, b) => a.sentAt - b.sentAt)) {
-        await voice.handleSignal(s.from, s.kind, s.payload);
-      }
-      await consume({ ids: signals.map((s) => s.id) });
-    })();
-  }, [signals, consume]);
+  }, []);
 
   // proximity reconciliation + speaking levels + HUD mic state
   useEffect(() => {
     const tick = setInterval(() => {
-      const list = (playersRef.current ?? [])
-        .filter((p) => p.key !== presenceKey && Date.now() - p.lastSeen < REMOTE_STALE_MS)
-        .map((p) => ({ deviceId: p.key, x: p.x, z: p.z }));
+      const list = [...net.roster.values()].map((p) => ({
+        deviceId: p.key,
+        x: p.x,
+        z: p.z,
+        mic: p.mic,
+      }));
       voice.updateProximity(playerPosRef.current, list);
       voiceLevelsRef.current = voice.levels();
       setMicLive(voice.isLive());
     }, 350);
     return () => clearInterval(tick);
-  }, [presenceKey, setMicLive]);
+  }, [setMicLive]);
 
   // V = push-to-talk; any gesture also retries blocked audio playback
   useEffect(() => {

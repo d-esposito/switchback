@@ -19,17 +19,26 @@ interface Peer {
   pendingIce: RTCIceCandidateInit[];
   hasRemote: boolean;
   initiator: boolean;
+  /** outbound ICE candidates batched into one signal per flush */
+  outIce: RTCIceCandidateInit[];
+  iceTimer: ReturnType<typeof setTimeout> | null;
 }
+
+const FAIL_BACKOFF_MS = 30_000;
 
 class VoiceManager {
   private myId = "";
   private mic: MediaStream | null = null;
   private peers = new Map<string, Peer>();
+  /** peers that recently failed — don't retry until the backoff expires */
+  private failedAt = new Map<string, number>();
   private analyserCtx: AudioContext | null = null;
   private levelBuf = new Uint8Array(256);
   private transmitting = false;
   private openMic = false;
   sendSignal: SignalSender = () => {};
+  /** called when the local mic becomes (un)available, to update the roster */
+  onMicState: (on: boolean) => void = () => {};
 
   get enabled(): boolean {
     return this.mic !== null;
@@ -54,6 +63,7 @@ class VoiceManager {
         }
         void this.renegotiate(id, peer);
       }
+      this.onMicState(true);
       return true;
     } catch {
       return false;
@@ -92,7 +102,10 @@ class VoiceManager {
     audio.autoplay = true;
     audio.volume = 0;
 
-    const peer: Peer = { pc, audio, analyser: null, pendingIce: [], hasRemote: false, initiator };
+    const peer: Peer = {
+      pc, audio, analyser: null, pendingIce: [], hasRemote: false, initiator,
+      outIce: [], iceTimer: null,
+    };
 
     if (this.mic) {
       for (const track of this.mic.getTracks()) pc.addTrack(track, this.mic);
@@ -100,8 +113,22 @@ class VoiceManager {
       pc.addTransceiver("audio", { direction: "recvonly" });
     }
 
+    // batch ICE candidates: one signal per ~300ms instead of one per candidate
+    const flushIce = () => {
+      peer.iceTimer = null;
+      if (peer.outIce.length === 0) return;
+      this.sendSignal(id, "ice", JSON.stringify(peer.outIce));
+      peer.outIce = [];
+    };
     pc.onicecandidate = (e) => {
-      if (e.candidate) this.sendSignal(id, "ice", JSON.stringify(e.candidate.toJSON()));
+      if (e.candidate) {
+        peer.outIce.push(e.candidate.toJSON());
+        peer.iceTimer ??= setTimeout(flushIce, 300);
+      } else {
+        // gathering finished — flush whatever is left immediately
+        if (peer.iceTimer) clearTimeout(peer.iceTimer);
+        flushIce();
+      }
     };
     pc.ontrack = (e) => {
       audio.srcObject = e.streams[0];
@@ -119,7 +146,10 @@ class VoiceManager {
       }
     };
     pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed") this.closePeer(id);
+      if (pc.connectionState === "failed") {
+        this.failedAt.set(id, Date.now());
+        this.closePeer(id);
+      }
     };
 
     this.peers.set(id, peer);
@@ -145,30 +175,39 @@ class VoiceManager {
         for (const c of peer.pendingIce) await peer.pc.addIceCandidate(c);
         peer.pendingIce = [];
       } else if (kind === "ice" && peer) {
-        const candidate = JSON.parse(payload) as RTCIceCandidateInit;
-        if (peer.hasRemote) await peer.pc.addIceCandidate(candidate);
-        else peer.pendingIce.push(candidate);
+        // candidates arrive batched as an array
+        const parsed = JSON.parse(payload) as RTCIceCandidateInit | RTCIceCandidateInit[];
+        const candidates = Array.isArray(parsed) ? parsed : [parsed];
+        for (const c of candidates) {
+          if (peer.hasRemote) await peer.pc.addIceCandidate(c);
+          else peer.pendingIce.push(c);
+        }
       }
     } catch {
-      // a glared/raced handshake — drop the pair; proximity loop will retry
+      // a glared/raced handshake — back off and let the proximity loop retry
+      this.failedAt.set(from, Date.now());
       this.closePeer(from);
     }
   }
 
   /**
    * Reconcile connections with who is nearby and set distance-based volume.
-   * Call a few times per second with fresh positions.
+   * Connections only form when at least one side has a live microphone —
+   * silent pairs exchange zero signaling. Call a few times per second.
    */
   updateProximity(
     self: { x: number; z: number },
-    remotes: { deviceId: string; x: number; z: number }[]
+    remotes: { deviceId: string; x: number; z: number; mic: boolean }[]
   ): void {
     const seen = new Set<string>();
+    const now = Date.now();
     for (const r of remotes) {
       const d = Math.hypot(r.x - self.x, r.z - self.z);
       seen.add(r.deviceId);
       const peer = this.peers.get(r.deviceId);
-      if (!peer && d < CONNECT_DIST) {
+      const worthConnecting = this.enabled || r.mic;
+      const backedOff = now - (this.failedAt.get(r.deviceId) ?? 0) < FAIL_BACKOFF_MS;
+      if (!peer && d < CONNECT_DIST && worthConnecting && !backedOff) {
         // deterministic initiator avoids both sides offering at once
         if (this.myId < r.deviceId) this.createPeer(r.deviceId, true);
       } else if (peer) {
@@ -216,6 +255,7 @@ class VoiceManager {
   private closePeer(id: string): void {
     const peer = this.peers.get(id);
     if (!peer) return;
+    if (peer.iceTimer) clearTimeout(peer.iceTimer);
     peer.pc.close();
     peer.audio.srcObject = null;
     this.peers.delete(id);

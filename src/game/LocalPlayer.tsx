@@ -7,7 +7,8 @@ import { Character } from "./Character";
 import { heightAt, normalAt } from "./terrain";
 import { useGame, timeOfDay, showToast } from "./store";
 import { weatherAt } from "./weather";
-import { playerPosRef, presenceRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef } from "./sharedRefs";
+import { net } from "./net";
+import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef } from "./sharedRefs";
 import { isAvailable, collect, type ResourceNode } from "./resources";
 import { getDeviceId } from "../lib/ids";
 import {
@@ -15,7 +16,7 @@ import {
   WALK_SPEED, RUN_SPEED, CLIMB_SPEED, JUMP_VEL, GRAVITY, SCRAMBLE_NY, BLOCK_NY,
   STAMINA_RUN_DRAIN, STAMINA_SCRAMBLE_DRAIN, STAMINA_CLIMB_DRAIN, STAMINA_JUMP_COST,
   STAMINA_REGEN_IDLE, STAMINA_REGEN_WALK, CAMPFIRE_REGEN_MULT, CAMPFIRE_RADIUS,
-  SEND_MIN_INTERVAL_MS, IDLE_HEARTBEAT_MS,
+  SEND_MIN_INTERVAL_MS,
 } from "./config";
 
 const CAM_DIST = 5.4;
@@ -68,7 +69,6 @@ export function LocalPlayer() {
 
   const gl = useThree((s) => s.gl);
   const camera = useThree((s) => s.camera);
-  const move = useMutation(api.presence.move);
   const gatherMut = useMutation(api.crafting.gather);
   const placeRopeMut = useMutation(api.crafting.placeRope);
   const placeTentMut = useMutation(api.crafting.placeTent);
@@ -182,6 +182,24 @@ export function LocalPlayer() {
   // wire the spotlight to its target object (both exist after first mount)
   useEffect(() => {
     lamp.current.target = lampTarget.current;
+  }, []);
+
+  // remember where we are so a reload in this tab resumes in place
+  useEffect(() => {
+    const save = () => {
+      const p = playerPosRef.current;
+      sessionStorage.setItem(
+        "switchback:lastPos",
+        JSON.stringify({ x: p.x, y: p.y, z: p.z, rotY: heading.current })
+      );
+    };
+    const onHide = () => document.visibilityState === "hidden" && save();
+    window.addEventListener("beforeunload", save);
+    document.addEventListener("visibilitychange", onHide);
+    return () => {
+      window.removeEventListener("beforeunload", save);
+      document.removeEventListener("visibilitychange", onHide);
+    };
   }, []);
 
   useFrame((_, rawDt) => {
@@ -390,26 +408,22 @@ export function LocalPlayer() {
       }
     }
 
-    // --- network sync: ~5 Hz while moving, instant on anim transitions
-    // (start/stop/jump/wave), slow heartbeat while idle ---
+    // --- network sync over the party socket: ~12.5 Hz while moving,
+    // instant on anim transitions (start/stop/jump/wave) ---
     const now = performance.now();
     const ls = lastSent.current;
     const animChanged = anim.current !== ls.anim;
     const movedEnough =
-      Math.hypot(p.x - ls.x, p.y - ls.y, p.z - ls.z) > 0.3 ||
-      Math.abs(heading.current - ls.rotY) > 0.2;
+      Math.hypot(p.x - ls.x, p.y - ls.y, p.z - ls.z) > 0.12 ||
+      Math.abs(heading.current - ls.rotY) > 0.1;
     const due =
       animChanged || // e.g. stopping — pins the exact end position immediately
-      (movedEnough && now - ls.t > SEND_MIN_INTERVAL_MS) ||
-      now - ls.t > IDLE_HEARTBEAT_MS;
-    if (due && presenceRef.current) {
+      (movedEnough && now - ls.t > SEND_MIN_INTERVAL_MS);
+    if (due) {
       lastSent.current = {
         t: now, x: p.x, y: p.y, z: p.z, rotY: heading.current, anim: anim.current,
       };
-      void move({
-        id: presenceRef.current,
-        x: p.x, y: p.y, z: p.z, rotY: heading.current, anim: anim.current,
-      });
+      net.sendPos(p.x, p.y, p.z, heading.current, anim.current);
     }
   });
 
