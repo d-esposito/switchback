@@ -21,3 +21,6 @@ export const tentsRef = { current: [] as { x: number; y: number; z: number }[] }
 
 /** Step pulse counter — incremented by LocalPlayer on each footfall (audio). */
 export const stepRef = { current: 0, surface: "grass" as "grass" | "rock" | "snow" };
+
+/** Live voice activity per remote deviceId (0..~1), written by VoiceController. */
+export const voiceLevelsRef = { current: {} as Record<string, number> };

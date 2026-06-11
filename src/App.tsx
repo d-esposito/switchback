@@ -5,6 +5,7 @@ import { LoginScreen } from "./ui/LoginScreen";
 import { HUD } from "./ui/HUD";
 import { RegisterPanel } from "./ui/RegisterPanel";
 import { CraftPanel } from "./ui/CraftPanel";
+import { VoiceController } from "./game/VoiceController";
 import { Game } from "./game/Game";
 import { useGame, type Profile } from "./game/store";
 import { getDeviceId } from "./lib/ids";
@@ -81,6 +82,7 @@ export default function App() {
       <RegisterPanel />
       <CraftPanel />
       <PlayerData />
+      <VoiceController />
     </>
   );
 }

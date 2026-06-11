@@ -84,4 +84,16 @@ export default defineSchema({
     placedBy: v.string(),
     placedAt: v.number(),
   }),
+
+  // WebRTC signaling for proximity voice chat. Rows are short-lived:
+  // recipients delete them after applying; sends garbage-collect stale ones.
+  rtcSignals: defineTable({
+    to: v.string(), // deviceId
+    from: v.string(),
+    kind: v.string(), // "offer" | "answer" | "ice"
+    payload: v.string(), // JSON-encoded SDP or ICE candidate
+    sentAt: v.number(),
+  })
+    .index("by_to", ["to", "sentAt"])
+    .index("by_sentAt", ["sentAt"]),
 });

@@ -26,6 +26,12 @@ flocks circle the valley, fireflies rise near the lake at night. All ambience
 is synthesized in WebAudio (wind by altitude, rain, birdsong, crickets,
 campfire crackle, footsteps by surface) — M toggles sound.
 
+**Proximity voice chat**: click the mic button (bottom right) to enable, then
+**hold V to talk** to hikers within ~28m — volume falls off with distance.
+Click the mic button again for open mic. Peer-to-peer WebRTC (STUN only, no
+TURN relay — some strict NATs may not connect), with Convex used purely for
+signaling; a green dot pulses over hikers who are speaking.
+
 Dev console helpers (dev builds only): `window.__tbWarp = {x, z}`,
 `window.__tbLook = {yaw, pitch}`, `window.__tb` (live state readout),
 `window.__tbWeather = {rain, mist}`, and

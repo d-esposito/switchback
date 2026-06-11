@@ -13,6 +13,7 @@ import type * as crafting from "../crafting.js";
 import type * as hello from "../hello.js";
 import type * as players from "../players.js";
 import type * as signatures from "../signatures.js";
+import type * as voice from "../voice.js";
 import type * as world from "../world.js";
 
 import type {
@@ -27,6 +28,7 @@ declare const fullApi: ApiFromModules<{
   hello: typeof hello;
   players: typeof players;
   signatures: typeof signatures;
+  voice: typeof voice;
   world: typeof world;
 }>;
 

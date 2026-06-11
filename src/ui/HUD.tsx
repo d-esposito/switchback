@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { useGame, timeOfDay } from "../game/store";
+import { useGame, timeOfDay, showToast } from "../game/store";
 import { weatherAt } from "../game/weather";
+import { voice } from "../game/voice";
 
 function phaseLabel(t: number): string {
   if (t < 0.21 || t >= 0.83) return "starlight";
@@ -97,6 +98,49 @@ function InventoryStrip() {
   );
 }
 
+function MicButton() {
+  const mode = useGame((s) => s.voiceMode);
+  const setMode = useGame((s) => s.setVoiceMode);
+  const live = useGame((s) => s.micLive);
+
+  const click = async () => {
+    if (mode === "off") {
+      const ok = await voice.enable();
+      if (!ok) {
+        showToast("Microphone unavailable — check browser permissions.");
+        return;
+      }
+      voice.setOpenMic(false);
+      setMode("ptt");
+      showToast("Voice ready — hold V to talk. Click again for open mic.");
+    } else if (mode === "ptt") {
+      voice.setOpenMic(true);
+      setMode("open");
+      showToast("Open mic — nearby hikers can hear you.");
+    } else {
+      voice.setOpenMic(false);
+      setMode("ptt");
+      showToast("Back to push-to-talk (hold V).");
+    }
+  };
+
+  return (
+    <button
+      className={`mic-btn ${mode}${live ? " live" : ""}`}
+      onClick={click}
+      title={
+        mode === "off"
+          ? "Enable proximity voice chat"
+          : mode === "ptt"
+            ? "Push-to-talk (hold V) — click for open mic"
+            : "Open mic — click for push-to-talk"
+      }
+    >
+      {mode === "off" ? "🎙 ✕" : mode === "ptt" ? "🎙 V" : "🎙 ∞"}
+    </button>
+  );
+}
+
 export function HUD() {
   const onlineCount = useGame((s) => s.onlineCount);
   const resting = useGame((s) => s.resting);
@@ -134,6 +178,7 @@ export function HUD() {
       <DayClock />
       <StaminaDial />
       <InventoryStrip />
+      <MicButton />
 
       {resting && <div className="resting-chip">🔥 resting by the fire — energy ×3</div>}
       {prompt && (
@@ -152,6 +197,7 @@ export function HUD() {
         <div><kbd>shift</kbd> run · <kbd>space</kbd> hop · <kbd>Q</kbd> wave</div>
         <div><kbd>E</kbd> interact · <kbd>B</kbd> cairn · <kbd>C</kbd> craft</div>
         <div><kbd>R</kbd> fix rope · <kbd>T</kbd> pitch tent · <kbd>M</kbd> sound</div>
+        <div><kbd>V</kbd> hold to talk to nearby hikers</div>
       </div>
     </div>
   );
