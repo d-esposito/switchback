@@ -37,23 +37,61 @@ class AudioEngine {
     this.master.gain.value = this.muted ? 0 : 0.6;
     this.master.connect(ctx.destination);
 
-    const noiseBuf = this.makeNoise(ctx);
+    // pink noise everywhere — white noise reads as harsh TV static
+    const pinkBuf = this.makePinkNoise(ctx);
 
-    // wind: noise → lowish bandpass (starts near-silent; update() fades it in)
-    this.wind = this.noiseLayer(ctx, noiseBuf, "bandpass", 380, 0.02);
-    // rain: noise → highpass hiss
-    this.rain = this.noiseLayer(ctx, noiseBuf, "highpass", 1900, 0);
-    // fire crackle bed: noise → low bandpass, pops added by scheduler
-    this.fire = this.noiseLayer(ctx, noiseBuf, "bandpass", 240, 0);
+    // wind: pink noise → lowish bandpass (starts near-silent; update() fades it in)
+    this.wind = this.noiseLayer(ctx, pinkBuf, "bandpass", 380, 0.02);
+    // fire crackle bed: pink noise → low bandpass
+    this.fire = this.noiseLayer(ctx, pinkBuf, "bandpass", 240, 0);
+
+    // rain: pink noise → gentle lowpass whose cutoff slowly "breathes",
+    // so it sounds like soft waves of rainfall instead of steady static
+    const rainSrc = ctx.createBufferSource();
+    rainSrc.buffer = pinkBuf;
+    rainSrc.loop = true;
+    const rumbleCut = ctx.createBiquadFilter();
+    rumbleCut.type = "highpass";
+    rumbleCut.frequency.value = 160;
+    const soften = ctx.createBiquadFilter();
+    soften.type = "lowpass";
+    soften.frequency.value = 2100;
+    soften.Q.value = 0.4;
+    const sweep = ctx.createOscillator();
+    sweep.frequency.value = 0.11;
+    const sweepDepth = ctx.createGain();
+    sweepDepth.gain.value = 550;
+    sweep.connect(sweepDepth);
+    sweepDepth.connect(soften.frequency);
+    this.rain = ctx.createGain();
+    this.rain.gain.value = 0;
+    rainSrc.connect(rumbleCut);
+    rumbleCut.connect(soften);
+    soften.connect(this.rain);
+    this.rain.connect(this.master);
+    rainSrc.start();
+    sweep.start();
 
     this.scheduleBird();
     this.scheduleCricket();
   }
 
-  private makeNoise(ctx: AudioContext): AudioBuffer {
-    const buf = ctx.createBuffer(1, ctx.sampleRate * 2, ctx.sampleRate);
+  /** Pink (1/f) noise via the Paul Kellet filter — soft and bass-weighted. */
+  private makePinkNoise(ctx: AudioContext): AudioBuffer {
+    const buf = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate);
     const d = buf.getChannelData(0);
-    for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    let b0 = 0, b1 = 0, b2 = 0, b3 = 0, b4 = 0, b5 = 0, b6 = 0;
+    for (let i = 0; i < d.length; i++) {
+      const white = Math.random() * 2 - 1;
+      b0 = 0.99886 * b0 + white * 0.0555179;
+      b1 = 0.99332 * b1 + white * 0.0750759;
+      b2 = 0.969 * b2 + white * 0.153852;
+      b3 = 0.8665 * b3 + white * 0.3104856;
+      b4 = 0.55 * b4 + white * 0.5329522;
+      b5 = -0.7616 * b5 - white * 0.016898;
+      d[i] = (b0 + b1 + b2 + b3 + b4 + b5 + b6 + white * 0.5362) * 0.11;
+      b6 = white * 0.115926;
+    }
     return buf;
   }
 
@@ -185,7 +223,7 @@ class AudioEngine {
     // setTargetAtTime is safe under repeated calls (no overlapping ramp pile-up)
     const t = ctx.currentTime;
     this.wind.gain.setTargetAtTime(0.025 + p.altitude * 0.11 + p.rain * 0.03, t, 0.25);
-    this.rain.gain.setTargetAtTime(p.rain * 0.14, t, 0.25);
+    this.rain.gain.setTargetAtTime(p.rain * 0.3, t, 0.25);
     this.fire.gain.setTargetAtTime(p.nearFire ? 0.12 : 0, t, 0.25);
   }
 
