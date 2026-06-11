@@ -213,9 +213,11 @@ class VoiceManager {
     if (p.mid) this.midStreams.delete(p.mid);
     if (!this.pc || !this.sessionId || !p.mid) return;
     try {
+      // force: the SFU must stop forwarding immediately — a silently failed
+      // graceful close leaves an orphaned stream billing egress to nobody
       const res = await api(`/sessions/${this.sessionId}/tracks/close`, "PUT", {
         tracks: [{ mid: p.mid }],
-        force: false,
+        force: true,
       });
       if (res.requiresImmediateRenegotiation && res.sessionDescription) {
         await this.pc.setRemoteDescription(res.sessionDescription);
@@ -225,8 +227,8 @@ class VoiceManager {
           sessionDescription: { type: "answer", sdp: answer.sdp },
         });
       }
-    } catch {
-      // closing is best-effort; a failed close just leaves a muted m-line
+    } catch (err) {
+      console.warn("[voice] track close failed — egress may leak:", err);
     }
   }
 
