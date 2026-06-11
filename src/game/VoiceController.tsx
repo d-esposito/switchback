@@ -30,7 +30,7 @@ export function VoiceController() {
       voice.updateProximity(playerPosRef.current, list);
       voiceLevelsRef.current = voice.levels();
       setMicLive(voice.isLive());
-    }, 350);
+    }, 200);
     return () => clearInterval(tick);
   }, [setMicLive]);
 

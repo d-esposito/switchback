@@ -60,7 +60,9 @@ class VoiceManager {
   private midStreams = new Map<string, MediaStream>();
   private failedAt = new Map<string, number>();
   private analyserCtx: AudioContext | null = null;
-  private levelBuf = new Uint8Array(256);
+  private levelBuf = new Uint8Array(1024);
+  private smoothedLevels = new Map<string, number>();
+  private lastLevelsAt = 0;
   private transmitting = false;
   private openMic = false;
   /** all SFU signaling ops run one at a time — WebRTC hates concurrent offers */
@@ -177,7 +179,8 @@ class VoiceManager {
         this.analyserCtx ??= new AudioContext();
         const src = this.analyserCtx.createMediaStreamSource(stream);
         analyser = this.analyserCtx.createAnalyser();
-        analyser.fftSize = 256;
+        // ~21ms window — instantaneous RMS over a few ms flickers on syllables
+        analyser.fftSize = 1024;
         src.connect(analyser);
       }
     } catch {
@@ -264,18 +267,35 @@ class VoiceManager {
     }
   }
 
-  /** Voice activity per pulled speaker, 0..~1 RMS. */
+  /**
+   * Voice activity per pulled speaker, 0..~1. Fast attack, ~450ms release:
+   * the level jumps when someone speaks and decays smoothly through the
+   * micro-pauses between words, so indicators don't strobe.
+   */
   levels(): Record<string, number> {
+    const now = performance.now();
+    const dt = this.lastLevelsAt ? Math.min(1, (now - this.lastLevelsAt) / 1000) : 0.2;
+    this.lastLevelsAt = now;
+    const release = Math.exp(-dt / 0.45);
+
     const out: Record<string, number> = {};
     for (const [key, p] of this.pulls) {
-      if (!p.analyser) continue;
-      p.analyser.getByteTimeDomainData(this.levelBuf);
-      let sum = 0;
-      for (let i = 0; i < this.levelBuf.length; i++) {
-        const x = (this.levelBuf[i] - 128) / 128;
-        sum += x * x;
+      let instant = 0;
+      if (p.analyser) {
+        p.analyser.getByteTimeDomainData(this.levelBuf);
+        let sum = 0;
+        for (let i = 0; i < this.levelBuf.length; i++) {
+          const x = (this.levelBuf[i] - 128) / 128;
+          sum += x * x;
+        }
+        instant = Math.sqrt(sum / this.levelBuf.length);
       }
-      out[key] = Math.sqrt(sum / this.levelBuf.length);
+      const smoothed = Math.max(instant, (this.smoothedLevels.get(key) ?? 0) * release);
+      this.smoothedLevels.set(key, smoothed);
+      out[key] = smoothed;
+    }
+    for (const key of [...this.smoothedLevels.keys()]) {
+      if (!this.pulls.has(key)) this.smoothedLevels.delete(key);
     }
     return out;
   }
