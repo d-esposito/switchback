@@ -1,72 +1,213 @@
-// Proximity voice chat: a WebRTC mesh where each pair of nearby hikers holds
-// one peer connection, with Convex as the signaling channel. Volume falls off
-// with distance; the mic transmits only while V is held (or open-mic is on).
+// Proximity voice over the Cloudflare Realtime SFU. Every player holds at
+// most ONE WebRTC connection — to Cloudflare's edge — publishing their mic
+// once and pulling only the tracks of nearby speakers. The app secret stays
+// on the party worker, which proxies the SFU's HTTPS API under /rtc/*.
+//
+// "Proximity" = which tracks we pull, and per-track volume by distance.
 
 export const VOICE_RANGE = 28; // silent beyond this many meters
-const CONNECT_DIST = 32; // start a connection inside this
-const DISCONNECT_DIST = 42; // tear down outside this (hysteresis)
-
-const RTC_CONFIG: RTCConfiguration = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
-};
-
-export type SignalSender = (to: string, kind: string, payload: string) => void;
-
-interface Peer {
-  pc: RTCPeerConnection;
-  audio: HTMLAudioElement;
-  analyser: AnalyserNode | null;
-  pendingIce: RTCIceCandidateInit[];
-  hasRemote: boolean;
-  initiator: boolean;
-  /** outbound ICE candidates batched into one signal per flush */
-  outIce: RTCIceCandidateInit[];
-  iceTimer: ReturnType<typeof setTimeout> | null;
-}
-
+const PULL_DIST = 32; // start pulling a speaker inside this
+const DROP_DIST = 42; // stop pulling outside this (hysteresis)
 const FAIL_BACKOFF_MS = 30_000;
 
+interface Pull {
+  key: string;
+  session: string;
+  mid: string | null;
+  audio: HTMLAudioElement;
+  analyser: AnalyserNode | null;
+}
+
+interface RemoteVoice {
+  deviceId: string;
+  x: number;
+  z: number;
+  mic: boolean;
+  voiceSession: string | null;
+}
+
+interface TracksResponse {
+  sessionDescription?: { type: "offer" | "answer"; sdp: string };
+  requiresImmediateRenegotiation?: boolean;
+  tracks?: { mid?: string; trackName?: string; sessionId?: string; error?: unknown }[];
+  errorCode?: string;
+}
+
+function rtcBase(): string {
+  const host = import.meta.env.VITE_PARTY_HOST as string;
+  const scheme =
+    host.startsWith("127.") || host.startsWith("localhost") ? "http" : "https";
+  return `${scheme}://${host}/rtc`;
+}
+
+async function api(path: string, method: "POST" | "PUT", body?: unknown): Promise<TracksResponse> {
+  const res = await fetch(rtcBase() + path, {
+    method,
+    headers: { "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`rtc ${path} -> ${res.status}`);
+  return (await res.json()) as TracksResponse;
+}
+
 class VoiceManager {
-  private myId = "";
+  private myKey = "";
   private mic: MediaStream | null = null;
-  private peers = new Map<string, Peer>();
-  /** peers that recently failed — don't retry until the backoff expires */
+  private pc: RTCPeerConnection | null = null;
+  private sessionId: string | null = null;
+  private published = false;
+  private pulls = new Map<string, Pull>();
+  private midStreams = new Map<string, MediaStream>();
   private failedAt = new Map<string, number>();
   private analyserCtx: AudioContext | null = null;
   private levelBuf = new Uint8Array(256);
   private transmitting = false;
   private openMic = false;
-  sendSignal: SignalSender = () => {};
-  /** called when the local mic becomes (un)available, to update the roster */
-  onMicState: (on: boolean) => void = () => {};
+  /** all SFU signaling ops run one at a time — WebRTC hates concurrent offers */
+  private queue: Promise<void> = Promise.resolve();
+  /** called when our published mic state changes, to update the roster */
+  onMicState: (on: boolean, session: string | null) => void = () => {};
 
   get enabled(): boolean {
     return this.mic !== null;
   }
 
-  setMyId(id: string): void {
-    this.myId = id;
+  setMyId(key: string): void {
+    this.myKey = key;
   }
 
-  /** Request the microphone. Must be called from a user gesture. */
+  private run<T>(op: () => Promise<T>): Promise<T> {
+    const result = this.queue.then(op);
+    this.queue = result.then(
+      () => undefined,
+      () => undefined
+    );
+    return result;
+  }
+
+  private async ensureConnection(): Promise<RTCPeerConnection> {
+    if (this.pc && this.sessionId) return this.pc;
+    const pc = new RTCPeerConnection({
+      iceServers: [{ urls: "stun:stun.cloudflare.com:3478" }],
+      bundlePolicy: "max-bundle",
+    });
+    pc.ontrack = (e) => {
+      if (e.transceiver.mid) {
+        this.midStreams.set(
+          e.transceiver.mid,
+          e.streams[0] ?? new MediaStream([e.track])
+        );
+      }
+    };
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === "failed") this.teardown();
+    };
+    const res = (await api("/sessions/new", "POST")) as unknown as { sessionId: string };
+    this.pc = pc;
+    this.sessionId = res.sessionId;
+    return pc;
+  }
+
+  /** Request the microphone and publish it once. Call from a user gesture. */
   async enable(): Promise<boolean> {
     if (this.mic) return true;
     try {
       this.mic = await navigator.mediaDevices.getUserMedia({
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
-      this.applyTransmit();
-      // existing connections were receive-only; renegotiate with our track
-      for (const [id, peer] of this.peers) {
-        for (const track of this.mic.getTracks()) {
-          peer.pc.addTrack(track, this.mic);
-        }
-        void this.renegotiate(id, peer);
-      }
-      this.onMicState(true);
+    } catch {
+      return false;
+    }
+    this.applyTransmit();
+    try {
+      await this.run(() => this.publish());
+      this.onMicState(true, this.sessionId);
       return true;
     } catch {
       return false;
+    }
+  }
+
+  private async publish(): Promise<void> {
+    if (this.published) return;
+    const pc = await this.ensureConnection();
+    const track = this.mic!.getAudioTracks()[0];
+    const tx = pc.addTransceiver(track, { direction: "sendonly" });
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    const res = await api(`/sessions/${this.sessionId}/tracks/new`, "POST", {
+      sessionDescription: { type: "offer", sdp: offer.sdp },
+      tracks: [{ location: "local", mid: tx.mid, trackName: this.myKey }],
+    });
+    if (res.sessionDescription) {
+      await pc.setRemoteDescription(res.sessionDescription);
+    }
+    this.published = true;
+  }
+
+  private async pull(key: string, session: string): Promise<void> {
+    const pc = await this.ensureConnection();
+    const res = await api(`/sessions/${this.sessionId}/tracks/new`, "POST", {
+      tracks: [{ location: "remote", sessionId: session, trackName: key }],
+    });
+    const track = res.tracks?.[0];
+    if (!track || track.error || !track.mid) {
+      throw new Error("pull failed for " + key);
+    }
+    if (res.requiresImmediateRenegotiation && res.sessionDescription) {
+      await pc.setRemoteDescription(res.sessionDescription);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await api(`/sessions/${this.sessionId}/renegotiate`, "PUT", {
+        sessionDescription: { type: "answer", sdp: answer.sdp },
+      });
+    }
+
+    const stream = this.midStreams.get(track.mid);
+    const audio = new Audio();
+    audio.autoplay = true;
+    audio.volume = 0;
+    if (stream) {
+      audio.srcObject = stream;
+      void audio.play().catch(() => {});
+    }
+    let analyser: AnalyserNode | null = null;
+    try {
+      if (stream) {
+        this.analyserCtx ??= new AudioContext();
+        const src = this.analyserCtx.createMediaStreamSource(stream);
+        analyser = this.analyserCtx.createAnalyser();
+        analyser.fftSize = 256;
+        src.connect(analyser);
+      }
+    } catch {
+      analyser = null;
+    }
+    this.pulls.set(key, { key, session, mid: track.mid, audio, analyser });
+  }
+
+  private async unpull(key: string): Promise<void> {
+    const p = this.pulls.get(key);
+    if (!p) return;
+    this.pulls.delete(key);
+    p.audio.srcObject = null;
+    if (p.mid) this.midStreams.delete(p.mid);
+    if (!this.pc || !this.sessionId || !p.mid) return;
+    try {
+      const res = await api(`/sessions/${this.sessionId}/tracks/close`, "PUT", {
+        tracks: [{ mid: p.mid }],
+        force: false,
+      });
+      if (res.requiresImmediateRenegotiation && res.sessionDescription) {
+        await this.pc.setRemoteDescription(res.sessionDescription);
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        await api(`/sessions/${this.sessionId}/renegotiate`, "PUT", {
+          sessionDescription: { type: "answer", sdp: answer.sdp },
+        });
+      }
+    } catch {
+      // closing is best-effort; a failed close just leaves a muted m-line
     }
   }
 
@@ -80,7 +221,6 @@ class VoiceManager {
     this.applyTransmit();
   }
 
-  /** True when the mic track is actually live to peers. */
   isLive(): boolean {
     return this.enabled && (this.transmitting || this.openMic);
   }
@@ -90,152 +230,52 @@ class VoiceManager {
     this.mic?.getAudioTracks().forEach((t) => (t.enabled = on));
   }
 
-  private async renegotiate(id: string, peer: Peer): Promise<void> {
-    const offer = await peer.pc.createOffer();
-    await peer.pc.setLocalDescription(offer);
-    this.sendSignal(id, "offer", JSON.stringify(offer));
-  }
-
-  private createPeer(id: string, initiator: boolean): Peer {
-    const pc = new RTCPeerConnection(RTC_CONFIG);
-    const audio = new Audio();
-    audio.autoplay = true;
-    audio.volume = 0;
-
-    const peer: Peer = {
-      pc, audio, analyser: null, pendingIce: [], hasRemote: false, initiator,
-      outIce: [], iceTimer: null,
-    };
-
-    if (this.mic) {
-      for (const track of this.mic.getTracks()) pc.addTrack(track, this.mic);
-    } else {
-      pc.addTransceiver("audio", { direction: "recvonly" });
-    }
-
-    // batch ICE candidates: one signal per ~300ms instead of one per candidate
-    const flushIce = () => {
-      peer.iceTimer = null;
-      if (peer.outIce.length === 0) return;
-      this.sendSignal(id, "ice", JSON.stringify(peer.outIce));
-      peer.outIce = [];
-    };
-    pc.onicecandidate = (e) => {
-      if (e.candidate) {
-        peer.outIce.push(e.candidate.toJSON());
-        peer.iceTimer ??= setTimeout(flushIce, 300);
-      } else {
-        // gathering finished — flush whatever is left immediately
-        if (peer.iceTimer) clearTimeout(peer.iceTimer);
-        flushIce();
-      }
-    };
-    pc.ontrack = (e) => {
-      audio.srcObject = e.streams[0];
-      // browsers may block autoplay until a gesture; retried in resumePlayback()
-      void audio.play().catch(() => {});
-      try {
-        this.analyserCtx ??= new AudioContext();
-        const src = this.analyserCtx.createMediaStreamSource(e.streams[0]);
-        const analyser = this.analyserCtx.createAnalyser();
-        analyser.fftSize = 256;
-        src.connect(analyser); // analysis only — playback stays on the element
-        peer.analyser = analyser;
-      } catch {
-        peer.analyser = null;
-      }
-    };
-    pc.onconnectionstatechange = () => {
-      if (pc.connectionState === "failed") {
-        this.failedAt.set(id, Date.now());
-        this.closePeer(id);
-      }
-    };
-
-    this.peers.set(id, peer);
-    if (initiator) void this.renegotiate(id, peer);
-    return peer;
-  }
-
-  async handleSignal(from: string, kind: string, payload: string): Promise<void> {
-    let peer = this.peers.get(from);
-    try {
-      if (kind === "offer") {
-        peer ??= this.createPeer(from, false);
-        await peer.pc.setRemoteDescription(JSON.parse(payload));
-        peer.hasRemote = true;
-        for (const c of peer.pendingIce) await peer.pc.addIceCandidate(c);
-        peer.pendingIce = [];
-        const answer = await peer.pc.createAnswer();
-        await peer.pc.setLocalDescription(answer);
-        this.sendSignal(from, "answer", JSON.stringify(answer));
-      } else if (kind === "answer" && peer) {
-        await peer.pc.setRemoteDescription(JSON.parse(payload));
-        peer.hasRemote = true;
-        for (const c of peer.pendingIce) await peer.pc.addIceCandidate(c);
-        peer.pendingIce = [];
-      } else if (kind === "ice" && peer) {
-        // candidates arrive batched as an array
-        const parsed = JSON.parse(payload) as RTCIceCandidateInit | RTCIceCandidateInit[];
-        const candidates = Array.isArray(parsed) ? parsed : [parsed];
-        for (const c of candidates) {
-          if (peer.hasRemote) await peer.pc.addIceCandidate(c);
-          else peer.pendingIce.push(c);
-        }
-      }
-    } catch {
-      // a glared/raced handshake — back off and let the proximity loop retry
-      this.failedAt.set(from, Date.now());
-      this.closePeer(from);
-    }
-  }
-
   /**
-   * Reconcile connections with who is nearby and set distance-based volume.
-   * Connections only form when at least one side has a live microphone —
-   * silent pairs exchange zero signaling. Call a few times per second.
+   * Reconcile pulled tracks with who is nearby and speaking-capable, and set
+   * per-track volume by distance. Call a few times per second.
    */
-  updateProximity(
-    self: { x: number; z: number },
-    remotes: { deviceId: string; x: number; z: number; mic: boolean }[]
-  ): void {
-    const seen = new Set<string>();
+  updateProximity(self: { x: number; z: number }, remotes: RemoteVoice[]): void {
     const now = Date.now();
+    const seen = new Set<string>();
     for (const r of remotes) {
-      const d = Math.hypot(r.x - self.x, r.z - self.z);
       seen.add(r.deviceId);
-      const peer = this.peers.get(r.deviceId);
-      const worthConnecting = this.enabled || r.mic;
+      const d = Math.hypot(r.x - self.x, r.z - self.z);
+      const pull = this.pulls.get(r.deviceId);
+      const speakable = r.mic && r.voiceSession !== null;
       const backedOff = now - (this.failedAt.get(r.deviceId) ?? 0) < FAIL_BACKOFF_MS;
-      if (!peer && d < CONNECT_DIST && worthConnecting && !backedOff) {
-        // deterministic initiator avoids both sides offering at once
-        if (this.myId < r.deviceId) this.createPeer(r.deviceId, true);
-      } else if (peer) {
-        if (d > DISCONNECT_DIST) {
-          this.closePeer(r.deviceId);
-        } else {
-          const v = Math.max(0, 1 - d / VOICE_RANGE);
-          peer.audio.volume = Math.pow(v, 1.6);
-        }
+
+      if (pull && (!speakable || d > DROP_DIST || pull.session !== r.voiceSession)) {
+        void this.run(() => this.unpull(r.deviceId));
+      } else if (!pull && speakable && d < PULL_DIST && !backedOff) {
+        const session = r.voiceSession!;
+        void this.run(() =>
+          this.pull(r.deviceId, session).catch(() => {
+            this.failedAt.set(r.deviceId, Date.now());
+            this.pulls.delete(r.deviceId);
+          })
+        );
+      } else if (pull) {
+        const v = Math.max(0, 1 - d / VOICE_RANGE);
+        pull.audio.volume = Math.pow(v, 1.6);
       }
     }
-    for (const id of [...this.peers.keys()]) {
-      if (!seen.has(id)) this.closePeer(id);
+    for (const key of [...this.pulls.keys()]) {
+      if (!seen.has(key)) void this.run(() => this.unpull(key));
     }
   }
 
-  /** Voice activity per connected peer, 0..1-ish RMS. */
+  /** Voice activity per pulled speaker, 0..~1 RMS. */
   levels(): Record<string, number> {
     const out: Record<string, number> = {};
-    for (const [id, peer] of this.peers) {
-      if (!peer.analyser) continue;
-      peer.analyser.getByteTimeDomainData(this.levelBuf);
+    for (const [key, p] of this.pulls) {
+      if (!p.analyser) continue;
+      p.analyser.getByteTimeDomainData(this.levelBuf);
       let sum = 0;
       for (let i = 0; i < this.levelBuf.length; i++) {
         const x = (this.levelBuf[i] - 128) / 128;
         sum += x * x;
       }
-      out[id] = Math.sqrt(sum / this.levelBuf.length);
+      out[key] = Math.sqrt(sum / this.levelBuf.length);
     }
     return out;
   }
@@ -243,22 +283,34 @@ class VoiceManager {
   /** Retry audio playback after a user gesture (autoplay policies). */
   resumePlayback(): void {
     if (this.analyserCtx?.state === "suspended") void this.analyserCtx.resume();
-    for (const peer of this.peers.values()) {
-      if (peer.audio.paused && peer.audio.srcObject) void peer.audio.play().catch(() => {});
+    for (const p of this.pulls.values()) {
+      if (p.audio.paused && p.audio.srcObject) void p.audio.play().catch(() => {});
     }
   }
 
   connectedCount(): number {
-    return this.peers.size;
+    return this.pulls.size;
   }
 
-  private closePeer(id: string): void {
-    const peer = this.peers.get(id);
-    if (!peer) return;
-    if (peer.iceTimer) clearTimeout(peer.iceTimer);
-    peer.pc.close();
-    peer.audio.srcObject = null;
-    this.peers.delete(id);
+  /** Drop the SFU connection entirely; proximity ticks will rebuild it. */
+  private teardown(): void {
+    for (const p of this.pulls.values()) {
+      p.audio.srcObject = null;
+    }
+    this.pulls.clear();
+    this.midStreams.clear();
+    this.pc?.close();
+    this.pc = null;
+    this.sessionId = null;
+    const wasPublished = this.published;
+    this.published = false;
+    if (wasPublished && this.mic) {
+      // re-publish on a fresh session so others can keep hearing us
+      void this.run(() => this.publish()).then(
+        () => this.onMicState(true, this.sessionId),
+        () => this.onMicState(false, null)
+      );
+    }
   }
 }
 

@@ -5,22 +5,16 @@ import { useGame, showToast } from "./store";
 import { playerPosRef, voiceLevelsRef } from "./sharedRefs";
 
 /**
- * Bridges the WebRTC voice mesh to the party socket. Signaling rides the
- * same WebSocket as position sync — it never touches the Convex mutation
- * queue — and peers only form when at least one side has a live mic.
+ * Bridges the SFU voice manager to the game. The roster (over the party
+ * socket) advertises who has a live mic and where their track lives; this
+ * controller decides which tracks to pull based on proximity.
  */
 export function VoiceController() {
   const setMicLive = useGame((s) => s.setMicLive);
 
-  // wire the manager to the socket
   useEffect(() => {
     voice.setMyId(net.key);
-    voice.sendSignal = (to, kind, payload) => net.sendSignal(to, kind, payload);
-    voice.onMicState = (on) => net.sendMic(on);
-    net.onSignal = (from, kind, payload) => void voice.handleSignal(from, kind, payload);
-    return () => {
-      net.onSignal = () => {};
-    };
+    voice.onMicState = (on, session) => net.sendMic(on, session);
   }, []);
 
   // proximity reconciliation + speaking levels + HUD mic state
@@ -31,6 +25,7 @@ export function VoiceController() {
         x: p.x,
         z: p.z,
         mic: p.mic,
+        voiceSession: p.voiceSession,
       }));
       voice.updateProximity(playerPosRef.current, list);
       voiceLevelsRef.current = voice.levels();

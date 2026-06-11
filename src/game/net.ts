@@ -25,6 +25,8 @@ export interface RemoteState {
   rotY: number;
   anim: string;
   mic: boolean;
+  /** SFU session id of this player's published mic track (null = silent). */
+  voiceSession: string | null;
 }
 
 type SignalHandler = (from: string, kind: string, payload: string) => void;
@@ -105,7 +107,10 @@ class Net {
         }
         case "mic": {
           const p = this.roster.get(m.key as string);
-          if (p) p.mic = m.on === true;
+          if (p) {
+            p.mic = m.on === true;
+            p.voiceSession = typeof m.session === "string" ? m.session : null;
+          }
           break;
         }
         case "sig":
@@ -132,9 +137,9 @@ class Net {
     this.socket!.send(JSON.stringify({ t: "pos", x, y, z, rotY, anim }));
   }
 
-  sendMic(on: boolean): void {
+  sendMic(on: boolean, session: string | null): void {
     if (!this.connected) return;
-    this.socket!.send(JSON.stringify({ t: "mic", on }));
+    this.socket!.send(JSON.stringify({ t: "mic", on, session }));
   }
 
   sendSignal(to: string, kind: string, payload: string): void {

@@ -25,12 +25,80 @@ interface PlayerState {
   z: number;
   rotY: number;
   anim: string;
-  /** True when this player has a live microphone (voice peers connect only then). */
+  /** True when this player has a live microphone (listeners pull only then). */
   mic: boolean;
+  /** The player's Realtime SFU session id — where their mic track lives. */
+  voiceSession: string | null;
 }
 
 interface Env {
   Mountain: DurableObjectNamespace;
+  /** Cloudflare Realtime SFU app credentials (wrangler secret / .dev.vars) */
+  CALLS_APP_ID?: string;
+  CALLS_APP_SECRET?: string;
+}
+
+// ---------------------------------------------------------------------------
+// Realtime SFU proxy: the browser negotiates WebRTC with Cloudflare's SFU
+// through us, so the app secret never ships to clients. Only the session and
+// track endpoints needed by the game are forwarded.
+// ---------------------------------------------------------------------------
+
+const RTC_PATH = /^\/rtc\/(sessions\/new|sessions\/[a-zA-Z0-9]+\/(tracks\/new|tracks\/close|renegotiate))$/;
+
+function corsHeaders(origin: string): Record<string, string> {
+  return {
+    "Access-Control-Allow-Origin": origin,
+    "Access-Control-Allow-Methods": "POST, PUT, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type",
+    "Vary": "Origin",
+  };
+}
+
+function allowedOrigin(request: Request): string | null {
+  const origin = request.headers.get("Origin");
+  if (!origin) return null;
+  if (
+    origin === "http://localhost:5173" ||
+    origin === "http://127.0.0.1:5173" ||
+    origin === "https://switchback-game.vercel.app" ||
+    origin === "https://hiking-game.vercel.app" ||
+    (origin.startsWith("https://") && origin.endsWith("-d-espositos-projects.vercel.app"))
+  ) {
+    return origin;
+  }
+  return null;
+}
+
+async function proxyRtc(request: Request, env: Env): Promise<Response> {
+  const origin = allowedOrigin(request);
+  if (!origin) return new Response("forbidden origin", { status: 403 });
+  if (request.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders(origin) });
+  }
+  if (!env.CALLS_APP_ID || !env.CALLS_APP_SECRET) {
+    return new Response("voice not configured", { status: 503, headers: corsHeaders(origin) });
+  }
+  const url = new URL(request.url);
+  const m = RTC_PATH.exec(url.pathname);
+  if (!m || (request.method !== "POST" && request.method !== "PUT")) {
+    return new Response("not found", { status: 404, headers: corsHeaders(origin) });
+  }
+  const upstream = await fetch(
+    `https://rtc.live.cloudflare.com/v1/apps/${env.CALLS_APP_ID}/${m[1]}`,
+    {
+      method: request.method,
+      headers: {
+        Authorization: `Bearer ${env.CALLS_APP_SECRET}`,
+        "Content-Type": "application/json",
+      },
+      body: request.body,
+    }
+  );
+  return new Response(upstream.body, {
+    status: upstream.status,
+    headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
+  });
 }
 
 /**
@@ -60,6 +128,7 @@ export class Mountain extends Server<Env> {
       rotY: 0,
       anim: "idle",
       mic: false,
+      voiceSession: null,
     };
     conn.setState(state);
 
@@ -110,8 +179,12 @@ export class Mountain extends Server<Env> {
       }
       case "mic": {
         const on = m.on === true;
-        conn.setState({ ...s, mic: on });
-        this.broadcast(JSON.stringify({ t: "mic", key: s.key, on }), [conn.id]);
+        const voiceSession = typeof m.session === "string" ? m.session : null;
+        conn.setState({ ...s, mic: on, voiceSession });
+        this.broadcast(
+          JSON.stringify({ t: "mic", key: s.key, on, session: voiceSession }),
+          [conn.id]
+        );
         break;
       }
       case "sig": {
@@ -148,6 +221,9 @@ function num(v: unknown, fallback: number): number {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    if (new URL(request.url).pathname.startsWith("/rtc/")) {
+      return proxyRtc(request, env);
+    }
     return (
       (await routePartykitRequest(request, env as unknown as Record<string, unknown>)) ??
       new Response("switchback-party: not a party route", { status: 404 })
