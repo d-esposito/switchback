@@ -16,7 +16,6 @@ class AudioEngine {
   private master!: GainNode;
   private wind!: GainNode;
   private rain!: GainNode;
-  private crickets!: GainNode;
   private fire!: GainNode;
   private muted = false;
   private params: AudioParams = {
@@ -40,33 +39,15 @@ class AudioEngine {
 
     const noiseBuf = this.makeNoise(ctx);
 
-    // wind: noise → lowish bandpass
-    this.wind = this.noiseLayer(ctx, noiseBuf, "bandpass", 380, 0.6);
+    // wind: noise → lowish bandpass (starts near-silent; update() fades it in)
+    this.wind = this.noiseLayer(ctx, noiseBuf, "bandpass", 380, 0.02);
     // rain: noise → highpass hiss
     this.rain = this.noiseLayer(ctx, noiseBuf, "highpass", 1900, 0);
     // fire crackle bed: noise → low bandpass, pops added by scheduler
     this.fire = this.noiseLayer(ctx, noiseBuf, "bandpass", 240, 0);
 
-    // crickets: pulsing high chirp
-    this.crickets = ctx.createGain();
-    this.crickets.gain.value = 0;
-    const cricketOsc = ctx.createOscillator();
-    cricketOsc.frequency.value = 4250;
-    const pulse = ctx.createGain();
-    const lfo = ctx.createOscillator();
-    lfo.frequency.value = 11;
-    const lfoGain = ctx.createGain();
-    lfoGain.gain.value = 0.5;
-    lfo.connect(lfoGain);
-    lfoGain.connect(pulse.gain);
-    pulse.gain.value = 0.5;
-    cricketOsc.connect(pulse);
-    pulse.connect(this.crickets);
-    this.crickets.connect(this.master);
-    cricketOsc.start();
-    lfo.start();
-
     this.scheduleBird();
+    this.scheduleCricket();
   }
 
   private makeNoise(ctx: AudioContext): AudioBuffer {
@@ -131,6 +112,41 @@ class AudioEngine {
     }, 2500 + Math.random() * 6000);
   }
 
+  /**
+   * One cricket chirp: a few rapid, fully-enveloped pulses. Crickets are
+   * discrete events, never a continuous oscillator — a sustained sine reads
+   * as ringing, not insects.
+   */
+  private cricketChirp(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const pulses = 3 + Math.floor(Math.random() * 3);
+    const freq = 4000 + Math.random() * 500;
+    for (let n = 0; n < pulses; n++) {
+      const t0 = ctx.currentTime + n * 0.07;
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.frequency.value = freq;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(0.011, t0 + 0.012);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.055);
+      osc.connect(g);
+      g.connect(this.master);
+      osc.start(t0);
+      osc.stop(t0 + 0.06);
+    }
+  }
+
+  private scheduleCricket(): void {
+    setTimeout(() => {
+      const p = this.params;
+      if (this.ctx && p.night > 0.5 && p.rain < 0.2 && p.altitude < 0.45 && Math.random() < 0.8) {
+        this.cricketChirp();
+      }
+      this.scheduleCricket();
+    }, 900 + Math.random() * 2200);
+  }
+
   /** Short filtered tick per footfall. */
   footstep(surface: "grass" | "rock" | "snow"): void {
     const ctx = this.ctx;
@@ -166,14 +182,11 @@ class AudioEngine {
     this.params = p;
     const ctx = this.ctx;
     if (!ctx) return;
-    const t = ctx.currentTime + 0.3;
-    this.wind.gain.linearRampToValueAtTime(0.025 + p.altitude * 0.11 + p.rain * 0.03, t);
-    this.rain.gain.linearRampToValueAtTime(p.rain * 0.14, t);
-    this.crickets.gain.linearRampToValueAtTime(
-      p.night * (p.rain > 0.2 ? 0 : 0.012) * (p.altitude < 0.4 ? 1 : 0.3),
-      t
-    );
-    this.fire.gain.linearRampToValueAtTime(p.nearFire ? 0.12 : 0, t);
+    // setTargetAtTime is safe under repeated calls (no overlapping ramp pile-up)
+    const t = ctx.currentTime;
+    this.wind.gain.setTargetAtTime(0.025 + p.altitude * 0.11 + p.rain * 0.03, t, 0.25);
+    this.rain.gain.setTargetAtTime(p.rain * 0.14, t, 0.25);
+    this.fire.gain.setTargetAtTime(p.nearFire ? 0.12 : 0, t, 0.25);
   }
 
   setMuted(m: boolean): void {
