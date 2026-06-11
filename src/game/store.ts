@@ -63,6 +63,14 @@ interface GameState {
 
   audioOn: boolean;
   setAudioOn: (a: boolean) => void;
+
+  /** "off" = no mic permission yet, "ptt" = hold V, "open" = always on */
+  voiceMode: "off" | "ptt" | "open";
+  setVoiceMode: (m: GameState["voiceMode"]) => void;
+
+  /** True while the mic is actually transmitting (V held or open mic). */
+  micLive: boolean;
+  setMicLive: (l: boolean) => void;
 }
 
 export const useGame = create<GameState>((set) => ({
@@ -94,6 +102,10 @@ export const useGame = create<GameState>((set) => ({
   setCraftOpen: (craftOpen) => set({ craftOpen }),
   audioOn: true,
   setAudioOn: (audioOn) => set({ audioOn }),
+  voiceMode: "off",
+  setVoiceMode: (voiceMode) => set({ voiceMode }),
+  micLive: false,
+  setMicLive: (micLive) => set({ micLive }),
 }));
 
 /** One toast helper: shows a message and clears it after a few seconds. */

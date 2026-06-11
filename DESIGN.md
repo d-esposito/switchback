@@ -1,4 +1,4 @@
-# Trailbound — Design & Technical Plan
+# Switchback — Design & Technical Plan
 
 > **Status (June 2026):** Phases 2–4 are live. Shipped: seeded open world
 > (Crown Peak + Outlook Knob + lake + fire lookout), hiker controller with
@@ -12,7 +12,7 @@
 > Backlog: photo mode + journal, peak badges on packs, ranger quests, daily
 > challenges, proximity chat bubbles, map UI, fast travel, more peaks/biomes.
 
-*Working title ideas: Trailbound, Switchback, Golden Hour, Wayfind, Scree, Basecamp*
+*Named **Switchback** (early prototypes used the working title "Trailbound").*
 
 A cozy, browser-based, open-world 3D multiplayer hiking game. You arrive at a mountain
 valley as a customizable little hiker, and the whole game is the mountain: walking trails,

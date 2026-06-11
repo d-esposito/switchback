@@ -638,6 +638,39 @@ input {
   backdrop-filter: blur(4px);
 }
 
+/* proximity voice mic button */
+.mic-btn {
+  position: absolute;
+  right: 16px;
+  bottom: 168px;
+  pointer-events: auto;
+  width: 58px;
+  height: 58px;
+  border-radius: 50%;
+  background: rgba(18, 32, 25, 0.82);
+  border: 2px solid rgba(244, 236, 217, 0.25);
+  font-size: 0.95rem;
+  backdrop-filter: blur(4px);
+  transition: border-color 0.2s, background 0.2s;
+}
+.mic-btn:hover {
+  border-color: var(--sun);
+}
+.mic-btn.off {
+  opacity: 0.75;
+}
+.mic-btn.open {
+  border-color: rgba(116, 168, 81, 0.8);
+}
+.mic-btn.live {
+  background: rgba(116, 168, 81, 0.35);
+  border-color: #9fe06a;
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  50% { box-shadow: 0 0 0 7px rgba(159, 224, 106, 0.18); }
+}
+
 /* loading veil while joining */
 .veil {
   position: fixed;

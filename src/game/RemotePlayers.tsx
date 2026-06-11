@@ -6,6 +6,7 @@ import * as THREE from "three";
 import { api } from "../../convex/_generated/api";
 import { Character } from "./Character";
 import { useGame, type Colors } from "./store";
+import { voiceLevelsRef } from "./sharedRefs";
 import { getDeviceId } from "../lib/ids";
 import { REMOTE_STALE_MS } from "./config";
 
@@ -27,6 +28,7 @@ const NAME_TAG_DIST = 45;
 function RemoteHiker({ p }: { p: RemotePlayer }) {
   const group = useRef<THREE.Group>(null!);
   const tag = useRef<THREE.Group>(null!);
+  const speakDot = useRef<THREE.Mesh>(null!);
   const speedRef = useRef(0);
   // start at the first reported position so hikers don't slide in from origin
   const current = useRef(new THREE.Vector3(p.x, p.y, p.z));
@@ -53,6 +55,15 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
     group.current.rotation.y += dr * Math.min(1, dt * 10);
 
     tag.current.visible = camera.position.distanceTo(cur) < NAME_TAG_DIST;
+
+    // voice indicator: glow + gentle pulse while this hiker is talking
+    const level = voiceLevelsRef.current[p.deviceId] ?? 0;
+    const speaking = level > 0.035;
+    speakDot.current.visible = speaking && tag.current.visible;
+    if (speaking) {
+      const s = 1 + Math.min(0.8, level * 6);
+      speakDot.current.scale.setScalar(s);
+    }
   });
 
   return (
@@ -70,6 +81,10 @@ function RemoteHiker({ p }: { p: RemotePlayer }) {
             {p.name}
           </Text>
         </Billboard>
+        <mesh ref={speakDot} position={[0, 2.32, 0]} visible={false}>
+          <sphereGeometry args={[0.055, 8, 6]} />
+          <meshBasicMaterial color="#9fe06a" />
+        </mesh>
       </group>
     </group>
   );

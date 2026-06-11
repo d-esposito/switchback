@@ -5,6 +5,7 @@ import { LoginScreen } from "./ui/LoginScreen";
 import { HUD } from "./ui/HUD";
 import { RegisterPanel } from "./ui/RegisterPanel";
 import { CraftPanel } from "./ui/CraftPanel";
+import { VoiceController } from "./game/VoiceController";
 import { Game } from "./game/Game";
 import { useGame, type Profile } from "./game/store";
 import { getDeviceId } from "./lib/ids";
@@ -23,11 +24,13 @@ function PlayerData() {
   return null;
 }
 
-const PROFILE_KEY = "trailbound:profile";
+const PROFILE_KEY = "switchback:profile";
+const LEGACY_PROFILE_KEY = "trailbound:profile";
 
 function loadProfile(): Profile | null {
   try {
-    const raw = localStorage.getItem(PROFILE_KEY);
+    const raw =
+      localStorage.getItem(PROFILE_KEY) ?? localStorage.getItem(LEGACY_PROFILE_KEY);
     return raw ? (JSON.parse(raw) as Profile) : null;
   } catch {
     return null;
@@ -79,6 +82,7 @@ export default function App() {
       <RegisterPanel />
       <CraftPanel />
       <PlayerData />
+      <VoiceController />
     </>
   );
 }
