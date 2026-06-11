@@ -19,6 +19,7 @@ function RemoteHiker({ initial }: { initial: RemoteState }) {
   const group = useRef<THREE.Group>(null!);
   const tag = useRef<THREE.Group>(null!);
   const speakDot = useRef<THREE.Mesh>(null!);
+  const speaking = useRef(false);
   const speedRef = useRef(0);
   const animRef = useRef(initial.anim);
   const current = useRef(new THREE.Vector3(initial.x, initial.y, initial.z));
@@ -47,11 +48,16 @@ function RemoteHiker({ initial }: { initial: RemoteState }) {
 
     tag.current.visible = camera.position.distanceTo(cur) < NAME_TAG_DIST;
 
-    // voice indicator: glow + gentle pulse while this hiker is talking
+    // voice indicator with hysteresis: a single threshold on a speech signal
+    // strobes between syllables — turn on high, only turn off well below
     const level = voiceLevelsRef.current[initial.key] ?? 0;
-    const speaking = level > 0.035;
-    speakDot.current.visible = speaking && tag.current.visible;
-    if (speaking) {
+    if (speaking.current) {
+      if (level < 0.012) speaking.current = false;
+    } else if (level > 0.04) {
+      speaking.current = true;
+    }
+    speakDot.current.visible = speaking.current && tag.current.visible;
+    if (speaking.current) {
       speakDot.current.scale.setScalar(1 + Math.min(0.8, level * 6));
     }
   });
