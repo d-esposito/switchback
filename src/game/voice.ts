@@ -14,7 +14,10 @@ interface Pull {
   key: string;
   session: string;
   mid: string | null;
+  /** muted — exists only because Chrome won't decode a WebRTC track without
+   * a media element consumer; actual playback goes through WebAudio */
   audio: HTMLAudioElement;
+  gain: GainNode | null;
   analyser: AnalyserNode | null;
 }
 
@@ -168,31 +171,44 @@ class VoiceManager {
     const stream = this.midStreams.get(track.mid);
     const audio = new Audio();
     audio.autoplay = true;
-    audio.volume = 0;
+    audio.muted = true; // playback happens in WebAudio below — one clock
     if (stream) {
       audio.srcObject = stream;
       void audio.play().catch(() => {});
     }
+    let gain: GainNode | null = null;
     let analyser: AnalyserNode | null = null;
     try {
       if (stream) {
         this.analyserCtx ??= new AudioContext();
-        const src = this.analyserCtx.createMediaStreamSource(stream);
-        analyser = this.analyserCtx.createAnalyser();
+        const ctx = this.analyserCtx;
+        const src = ctx.createMediaStreamSource(stream);
+        gain = ctx.createGain();
+        gain.gain.value = 0;
+        src.connect(gain);
+        gain.connect(ctx.destination);
+        analyser = ctx.createAnalyser();
         // ~21ms window — instantaneous RMS over a few ms flickers on syllables
         analyser.fftSize = 1024;
         src.connect(analyser);
+        if (ctx.state === "suspended") void ctx.resume();
       }
     } catch {
+      gain = null;
       analyser = null;
+      // fall back to element playback if WebAudio routing fails
+      audio.muted = false;
+      audio.volume = 0;
     }
-    this.pulls.set(key, { key, session, mid: track.mid, audio, analyser });
+    this.pulls.set(key, { key, session, mid: track.mid, audio, gain, analyser });
   }
 
   private async unpull(key: string): Promise<void> {
     const p = this.pulls.get(key);
     if (!p) return;
     this.pulls.delete(key);
+    p.gain?.disconnect();
+    p.analyser?.disconnect();
     p.audio.srcObject = null;
     if (p.mid) this.midStreams.delete(p.mid);
     if (!this.pc || !this.sessionId || !p.mid) return;
@@ -258,8 +274,13 @@ class VoiceManager {
           })
         );
       } else if (pull) {
-        const v = Math.max(0, 1 - d / VOICE_RANGE);
-        pull.audio.volume = Math.pow(v, 1.6);
+        const v = Math.pow(Math.max(0, 1 - d / VOICE_RANGE), 1.6);
+        if (pull.gain && this.analyserCtx) {
+          // smoothed ramp — hard volume steps every tick sound like dropouts
+          pull.gain.gain.setTargetAtTime(v, this.analyserCtx.currentTime, 0.15);
+        } else {
+          pull.audio.volume = v;
+        }
       }
     }
     for (const key of [...this.pulls.keys()]) {
@@ -315,6 +336,8 @@ class VoiceManager {
   /** Drop the SFU connection entirely; proximity ticks will rebuild it. */
   private teardown(): void {
     for (const p of this.pulls.values()) {
+      p.gain?.disconnect();
+      p.analyser?.disconnect();
       p.audio.srcObject = null;
     }
     this.pulls.clear();
