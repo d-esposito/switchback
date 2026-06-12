@@ -1,7 +1,7 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { voice } from "./voice";
 import { net } from "./net";
-import { useGame, showToast } from "./store";
+import { useGame, showToast, uiCaptured } from "./store";
 import { playerPosRef, voiceLevelsRef } from "./sharedRefs";
 
 /**
@@ -17,9 +17,16 @@ export function VoiceController() {
     voice.onMicState = (on, session) => net.sendMic(on, session);
   }, []);
 
-  // proximity reconciliation + speaking levels + HUD mic state
+  // proximity reconciliation + speaking levels + HUD mic state.
+  // Also (re)announce our mic on every socket (re)connect — the server's
+  // fresh connection state starts mic-less.
+  const announcedEpoch = useRef(-1);
   useEffect(() => {
     const tick = setInterval(() => {
+      if (voice.enabled && net.connected && announcedEpoch.current !== net.openCount) {
+        announcedEpoch.current = net.openCount;
+        net.sendMic(true, voice.session);
+      }
       const list = [...net.roster.values()].map((p) => ({
         deviceId: p.key,
         x: p.x,
@@ -38,7 +45,7 @@ export function VoiceController() {
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
       voice.resumePlayback();
-      if (e.code !== "KeyV" || e.repeat) return;
+      if (e.code !== "KeyV" || e.repeat || uiCaptured()) return;
       if (!voice.enabled) {
         showToast("Click the mic button (bottom right) to enable voice chat.");
         return;

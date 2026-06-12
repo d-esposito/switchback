@@ -253,6 +253,61 @@ input {
   border-color: var(--ink);
 }
 
+/* spawn zone picker */
+.zone-pick > label {
+  display: block;
+  font-size: 0.66rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.6;
+  margin-bottom: 0.3rem;
+}
+.zone-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.35rem;
+}
+.zone-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  border: 1.5px solid rgba(44, 35, 23, 0.35);
+  border-radius: 6px;
+  padding: 0.34rem 0.5rem;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.25);
+  text-align: left;
+}
+.zone-btn .zi {
+  font-size: 1rem;
+}
+.zone-btn.active {
+  background: var(--ink);
+  color: var(--paper);
+  border-color: var(--ink);
+}
+.zone-btn:first-child {
+  grid-column: span 2;
+}
+
+/* mic opt-in */
+.mic-pick {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1.5px dashed rgba(44, 35, 23, 0.4);
+  border-radius: 6px;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.2);
+  text-align: left;
+}
+.mic-pick.on {
+  border-style: solid;
+  border-color: #4d7c3e;
+  background: rgba(116, 168, 81, 0.18);
+}
+
 .begin-btn {
   margin-top: 0.5rem;
   position: relative;
@@ -669,6 +724,35 @@ input {
 }
 @keyframes mic-pulse {
   50% { box-shadow: 0 0 0 7px rgba(159, 224, 106, 0.18); }
+}
+
+/* slash-command bar */
+.command-bar {
+  position: fixed;
+  left: 50%;
+  bottom: 120px;
+  transform: translateX(-50%);
+  width: min(480px, 90vw);
+  z-index: 30;
+}
+.command-bar input {
+  width: 100%;
+  background: rgba(18, 32, 25, 0.92);
+  border: 1.5px solid rgba(232, 169, 78, 0.6);
+  border-radius: 10px;
+  padding: 0.6rem 0.9rem;
+  color: var(--cream);
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 0.95rem;
+  outline: none;
+  backdrop-filter: blur(6px);
+}
+
+/* multiline toasts (e.g. /help) */
+.toast {
+  white-space: pre-line;
+  text-align: left;
+  max-width: min(560px, 92vw);
 }
 
 /* loading veil while joining */

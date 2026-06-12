@@ -75,6 +75,10 @@ interface GameState {
   /** Bumped when a hiker joins/leaves so React remounts the remote list. */
   rosterVersion: number;
   setRosterVersion: (v: number) => void;
+
+  /** True while the slash-command bar captures the keyboard. */
+  commandOpen: boolean;
+  setCommandOpen: (o: boolean) => void;
 }
 
 export const useGame = create<GameState>((set) => ({
@@ -112,7 +116,15 @@ export const useGame = create<GameState>((set) => ({
   setMicLive: (micLive) => set({ micLive }),
   rosterVersion: 0,
   setRosterVersion: (rosterVersion) => set({ rosterVersion }),
+  commandOpen: false,
+  setCommandOpen: (commandOpen) => set({ commandOpen }),
 }));
+
+/** True when any UI layer should swallow game keybinds. */
+export function uiCaptured(): boolean {
+  const s = useGame.getState();
+  return s.activePeak !== null || s.craftOpen || s.commandOpen;
+}
 
 /** One toast helper: shows a message and clears it after a few seconds. */
 let toastTimer: ReturnType<typeof setTimeout> | undefined;

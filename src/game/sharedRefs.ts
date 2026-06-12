@@ -24,3 +24,12 @@ export const stepRef = { current: 0, surface: "grass" as "grass" | "rock" | "sno
 
 /** Live voice activity per remote presence key (0..~1), written by VoiceController. */
 export const voiceLevelsRef = { current: {} as Record<string, number> };
+
+/** Set by slash commands (/tp, /yeet); consumed by LocalPlayer next frame. */
+export const teleportRef = {
+  current: null as { x: number; z: number } | null,
+  /** extra upward velocity to apply (for /yeet) */
+  launch: 0,
+  /** set stamina to full (for /gorp) */
+  refill: false,
+};

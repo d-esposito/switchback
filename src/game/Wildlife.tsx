@@ -15,13 +15,13 @@ const FLEE_DIST = 9;
 function deerHome(i: number): { x: number; z: number } {
   for (let attempt = 0; attempt < 40; attempt++) {
     const a = hash2(i, attempt, SEED + 21) * Math.PI * 2;
-    const r = 80 + hash2(i, attempt + 100, SEED + 21) * 300;
+    const r = 90 + hash2(i, attempt + 100, SEED + 21) * 550;
     const x = Math.cos(a) * r;
-    const z = Math.sin(a) * r + 100;
+    const z = Math.sin(a) * r;
     const h = heightAt(x, z);
-    if (h > 5 && h < 45 && Math.hypot(x, z - 318) > 60) return { x, z };
+    if (h > 4 && h < 55 && Math.hypot(x, z) > 70) return { x, z };
   }
-  return { x: 150, z: 150 };
+  return { x: 200, z: -150 };
 }
 
 function Deer({ index }: { index: number }) {
@@ -160,9 +160,9 @@ function Deer({ index }: { index: number }) {
 }
 
 const FLOCKS = [
-  { cx: 60, cz: 150, r: 35, speed: 0.22, count: 6 },
-  { cx: -180, cz: -40, r: 28, speed: 0.18, count: 5 },
-  { cx: 140, cz: 360, r: 40, speed: 0.26, count: 7 },
+  { cx: 0, cz: 80, r: 40, speed: 0.22, count: 6 }, // over the hub meadow
+  { cx: 540, cz: 540, r: 45, speed: 0.26, count: 7 }, // gulls over the cove
+  { cx: -520, cz: -340, r: 38, speed: 0.18, count: 5 }, // riding mesa thermals
 ];
 
 function Birds() {
@@ -218,7 +218,7 @@ function Birds() {
 }
 
 const FIREFLY_COUNT = 46;
-const FIREFLY_HOME = { x: 90, z: 350 }; // meadow between spawn and the lake
+const FIREFLY_HOME = { x: 420, z: 420 }; // meadow above Dolphin Cove
 
 function Fireflies() {
   const mesh = useRef<THREE.InstancedMesh>(null!);

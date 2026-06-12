@@ -35,6 +35,8 @@ class Net {
   private socket: PartySocket | null = null;
   /** Live remote players. Mutated in place; positions are read per-frame. */
   readonly roster = new Map<string, RemoteState>();
+  /** Increments on every (re)connect — used to re-announce state like mic. */
+  openCount = 0;
   onSignal: SignalHandler = () => {};
 
   get key(): string {
@@ -119,6 +121,9 @@ class Net {
       }
     });
 
+    this.socket.addEventListener("open", () => {
+      this.openCount += 1;
+    });
     // a reconnecting socket gets a fresh roster from the server on open;
     // stale entries are cleared by the roster snapshot handler above
     this.socket.addEventListener("close", () => {

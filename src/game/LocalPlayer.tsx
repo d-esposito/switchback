@@ -8,11 +8,11 @@ import { heightAt, normalAt } from "./terrain";
 import { useGame, timeOfDay, showToast } from "./store";
 import { weatherAt } from "./weather";
 import { net } from "./net";
-import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef } from "./sharedRefs";
+import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef, teleportRef } from "./sharedRefs";
 import { isAvailable, collect, type ResourceNode } from "./resources";
 import { getDeviceId } from "../lib/ids";
 import {
-  SPAWN, PEAKS, CAMPFIRE, PLAY_RADIUS,
+  SPAWN, PEAKS, ZONES, PLAY_RADIUS,
   WALK_SPEED, RUN_SPEED, CLIMB_SPEED, JUMP_VEL, GRAVITY, SCRAMBLE_NY, BLOCK_NY,
   STAMINA_RUN_DRAIN, STAMINA_SCRAMBLE_DRAIN, STAMINA_CLIMB_DRAIN, STAMINA_JUMP_COST,
   STAMINA_REGEN_IDLE, STAMINA_REGEN_WALK, CAMPFIRE_REGEN_MULT, CAMPFIRE_RADIUS,
@@ -96,9 +96,14 @@ export function LocalPlayer() {
   // input + pointer lock
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
+      const state = useGame.getState();
+      // the command bar (and other panels) own the keyboard while open
+      if (state.commandOpen) {
+        keys.current = {};
+        return;
+      }
       keys.current[e.code] = true;
       const p = pos.current;
-      const state = useGame.getState();
 
       if (e.code === "KeyE") {
         const near = PEAKS.find(
@@ -119,8 +124,9 @@ export function LocalPlayer() {
       }
       if (e.code === "KeyC") {
         const atCamp =
-          Math.hypot(p.x - CAMPFIRE.x, p.z - CAMPFIRE.z) < CAMPFIRE_RADIUS ||
-          nearAny(tentsRef.current, p.x, p.z, TENT_AURA_RADIUS);
+          ZONES.some(
+            (zn) => Math.hypot(p.x - zn.camp.x, p.z - zn.camp.z) < CAMPFIRE_RADIUS
+          ) || nearAny(tentsRef.current, p.x, p.z, TENT_AURA_RADIUS);
         if (atCamp) {
           state.setCraftOpen(true);
           document.exitPointerLock();
@@ -224,6 +230,23 @@ export function LocalPlayer() {
       }
     }
 
+    // slash-command effects (consumed once per frame)
+    if (teleportRef.current) {
+      const t = teleportRef.current;
+      teleportRef.current = null;
+      p.set(t.x, heightAt(t.x, t.z), t.z);
+      vy.current = 0;
+    }
+    if (teleportRef.launch > 0) {
+      vy.current = teleportRef.launch;
+      grounded.current = false;
+      teleportRef.launch = 0;
+    }
+    if (teleportRef.refill) {
+      stamina.current = 100;
+      teleportRef.refill = false;
+    }
+
     // --- movement intent (camera-relative) ---
     let ix = 0;
     let iz = 0;
@@ -232,7 +255,8 @@ export function LocalPlayer() {
     if (k.KeyA) ix -= 1;
     if (k.KeyD) ix += 1;
     const ui = useGame.getState();
-    const hasInput = (ix !== 0 || iz !== 0) && !ui.activePeak && !ui.craftOpen;
+    const hasInput =
+      (ix !== 0 || iz !== 0) && !ui.activePeak && !ui.craftOpen && !ui.commandOpen;
 
     const wantRun = !!k.ShiftLeft || !!k.ShiftRight;
     const canRun = stamina.current > 0.5;
@@ -315,7 +339,7 @@ export function LocalPlayer() {
 
     // --- stamina ---
     const nearFire =
-      Math.hypot(p.x - CAMPFIRE.x, p.z - CAMPFIRE.z) < CAMPFIRE_RADIUS ||
+      ZONES.some((zn) => Math.hypot(p.x - zn.camp.x, p.z - zn.camp.z) < CAMPFIRE_RADIUS) ||
       nearAny(tentsRef.current, p.x, p.z, TENT_AURA_RADIUS);
     const rainNow = weatherAt(ui.clock).rain;
     const roped = climbing && nearAny(ropesRef.current, p.x, p.z, ROPE_ASSIST_RADIUS);

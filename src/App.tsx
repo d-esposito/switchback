@@ -7,21 +7,15 @@ import { RegisterPanel } from "./ui/RegisterPanel";
 import { CraftPanel } from "./ui/CraftPanel";
 import { VoiceController } from "./game/VoiceController";
 import { Game } from "./game/Game";
-import { useGame, type Profile } from "./game/store";
+import { CommandBar } from "./ui/CommandBar";
+import { useGame, showToast, type Profile } from "./game/store";
 import { net } from "./game/net";
-import { VOICE_ENABLED, SPAWN } from "./game/config";
+import { voice } from "./game/voice";
+import { VOICE_ENABLED, HUB, zoneById } from "./game/config";
 import { getDeviceId } from "./lib/ids";
 
-const LAST_POS_KEY = "switchback:lastPos";
-
-function loadLastPos(): { x: number; y: number; z: number; rotY: number } | null {
-  try {
-    const raw = sessionStorage.getItem(LAST_POS_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-}
+const ZONE_KEY = "switchback:spawnZone";
+const MIC_KEY = "switchback:micPref";
 
 /** Mirrors the player's server-side inventory/gear into the UI store. */
 function PlayerData() {
@@ -68,16 +62,36 @@ export default function App() {
     if (world) setClock({ epochMs: world.epochMs, dayLengthMs: world.dayLengthMs });
   }, [world, setClock]);
 
-  const begin = async (profile: Profile) => {
+  const begin = async (profile: Profile, zoneId: string, micOn: boolean) => {
     setJoining(true);
     try {
       localStorage.setItem(PROFILE_KEY, JSON.stringify(profile));
+      localStorage.setItem(ZONE_KEY, zoneId);
+      localStorage.setItem(MIC_KEY, micOn ? "1" : "0");
       setProfile(profile);
+
+      // spawn at the chosen camp, slightly scattered so arrivals don't stack
+      const zone = zoneById(zoneId) ?? HUB;
+      const spawn = {
+        x: zone.camp.x + (Math.random() - 0.5) * 5,
+        y: 0,
+        z: zone.camp.z + 3 + Math.random() * 3,
+      };
+
+      // mic permission up front, while we're still a click away from the prompt
+      if (micOn && VOICE_ENABLED) {
+        const ok = await voice.enable();
+        if (ok) {
+          useGame.getState().setVoiceMode("ptt");
+        } else {
+          showToast("Mic unavailable — joining quietly. The mic button can retry.");
+        }
+      }
+
       // Convex keeps the durable profile; the party room carries live presence
-      const resume = loadLastPos();
-      net.connect(profile, resume ?? { x: SPAWN.x, y: 0, z: SPAWN.z });
+      net.connect(profile, spawn);
       await Promise.all([join({ deviceId: getDeviceId(), ...profile }), ensureWorld()]);
-      setResumeAt(resume);
+      setResumeAt({ ...spawn, rotY: Math.PI });
       setStage("game");
     } finally {
       setJoining(false);
@@ -85,7 +99,15 @@ export default function App() {
   };
 
   if (stage === "login") {
-    return <LoginScreen initial={saved} joining={joining} onBegin={begin} />;
+    return (
+      <LoginScreen
+        initial={saved}
+        initialZone={localStorage.getItem(ZONE_KEY) ?? HUB.id}
+        initialMic={localStorage.getItem(MIC_KEY) === "1"}
+        joining={joining}
+        onBegin={begin}
+      />
+    );
   }
 
   return (
@@ -94,6 +116,7 @@ export default function App() {
       <HUD />
       <RegisterPanel />
       <CraftPanel />
+      <CommandBar />
       <PlayerData />
       {VOICE_ENABLED && <VoiceController />}
     </>
