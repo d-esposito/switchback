@@ -31,10 +31,21 @@ export interface RemoteState {
 
 type SignalHandler = (from: string, kind: string, payload: string) => void;
 
+/** A live screen share on one campsite TV. */
+export interface TvState {
+  key: string;
+  session: string;
+  trackName: string;
+}
+
 class Net {
   private socket: PartySocket | null = null;
   /** Live remote players. Mutated in place; positions are read per-frame. */
   readonly roster = new Map<string, RemoteState>();
+  /** campId -> active screen share. Mutated in place; read per-frame. */
+  readonly tvs = new Map<string, TvState>();
+  /** called when a TV claim is rejected because someone else is presenting */
+  onTvBusy: (campId: string) => void = () => {};
   /** Increments on every (re)connect — used to re-announce state like mic. */
   openCount = 0;
   onSignal: SignalHandler = () => {};
@@ -82,6 +93,12 @@ class Net {
           for (const p of m.players as RemoteState[]) {
             if (p.key !== this.key) this.roster.set(p.key, p);
           }
+          this.tvs.clear();
+          for (const [campId, tv] of Object.entries(
+            (m.tvs ?? {}) as Record<string, TvState>
+          )) {
+            this.tvs.set(campId, tv);
+          }
           this.bumpRoster();
           break;
         case "join": {
@@ -115,6 +132,20 @@ class Net {
           }
           break;
         }
+        case "tv":
+          if (m.on === true) {
+            this.tvs.set(m.campId as string, {
+              key: m.key as string,
+              session: m.session as string,
+              trackName: m.trackName as string,
+            });
+          } else {
+            this.tvs.delete(m.campId as string);
+          }
+          break;
+        case "tvBusy":
+          this.onTvBusy(m.campId as string);
+          break;
         case "sig":
           this.onSignal(m.from as string, m.kind as string, m.payload as string);
           break;
@@ -145,6 +176,11 @@ class Net {
   sendMic(on: boolean, session: string | null): void {
     if (!this.connected) return;
     this.socket!.send(JSON.stringify({ t: "mic", on, session }));
+  }
+
+  sendTv(campId: string, on: boolean, session?: string, trackName?: string): void {
+    if (!this.connected) return;
+    this.socket!.send(JSON.stringify({ t: "tv", campId, on, session, trackName }));
   }
 
   sendSignal(to: string, kind: string, payload: string): void {

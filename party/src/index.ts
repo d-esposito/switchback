@@ -108,7 +108,18 @@ async function proxyRtc(request: Request, env: Env): Promise<Response> {
  * - voice signaling (offer/answer/ice) is unicast-routed between peers,
  *   never touching the position path
  */
+/** A live screen share on one campsite TV. */
+interface TvState {
+  key: string;
+  session: string;
+  trackName: string;
+}
+
 export class Mountain extends Server<Env> {
+  /** campId -> presenter. In-memory: if the DO restarts every socket drops
+   * and presenters re-claim on reconnect, so durable storage buys nothing. */
+  private tvs = new Map<string, TvState>();
+
   onConnect(conn: Connection<PlayerState>, ctx: ConnectionContext): void {
     const q = new URL(ctx.request.url).searchParams;
     let colors: Colors;
@@ -137,7 +148,9 @@ export class Mountain extends Server<Env> {
     for (const other of this.getConnections<PlayerState>()) {
       if (other.id !== conn.id && other.state) roster.push(other.state);
     }
-    conn.send(JSON.stringify({ t: "roster", players: roster }));
+    const tvs: Record<string, TvState> = {};
+    for (const [campId, tv] of this.tvs) tvs[campId] = tv;
+    conn.send(JSON.stringify({ t: "roster", players: roster, tvs }));
     this.broadcast(JSON.stringify({ t: "join", p: state }), [conn.id]);
   }
 
@@ -187,6 +200,26 @@ export class Mountain extends Server<Env> {
         );
         break;
       }
+      case "tv": {
+        // claim or release a campsite TV — one presenter per TV
+        if (typeof m.campId !== "string") return;
+        const current = this.tvs.get(m.campId);
+        if (m.on === true) {
+          if (typeof m.session !== "string" || typeof m.trackName !== "string") return;
+          if (current && current.key !== s.key) {
+            conn.send(JSON.stringify({ t: "tvBusy", campId: m.campId }));
+            return;
+          }
+          const tv: TvState = { key: s.key, session: m.session, trackName: m.trackName };
+          this.tvs.set(m.campId, tv);
+          this.broadcast(JSON.stringify({ t: "tv", campId: m.campId, on: true, ...tv }));
+        } else {
+          if (!current || current.key !== s.key) return;
+          this.tvs.delete(m.campId);
+          this.broadcast(JSON.stringify({ t: "tv", campId: m.campId, on: false }));
+        }
+        break;
+      }
       case "sig": {
         // voice signaling: route to the one connection with the target key
         if (typeof m.to !== "string") return;
@@ -205,6 +238,13 @@ export class Mountain extends Server<Env> {
 
   onClose(conn: Connection<PlayerState>): void {
     if (conn.state) {
+      // a vanished presenter frees their TV — nobody can stop it for them
+      for (const [campId, tv] of this.tvs) {
+        if (tv.key === conn.state.key) {
+          this.tvs.delete(campId);
+          this.broadcast(JSON.stringify({ t: "tv", campId, on: false }), [conn.id]);
+        }
+      }
       this.broadcast(JSON.stringify({ t: "leave", key: conn.state.key }), [conn.id]);
     }
   }

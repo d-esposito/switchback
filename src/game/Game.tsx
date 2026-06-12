@@ -12,6 +12,7 @@ import { Wildlife } from "./Wildlife";
 import { AudioController } from "./AudioController";
 import { Campsite, FingerPost, FireLookout, SummitRegister } from "./Landmarks";
 import { ParkedPlane } from "./Plane";
+import { CampTVs } from "./CampTV";
 import { PEAKS, ZONES } from "./config";
 
 export function Game() {
@@ -30,6 +31,7 @@ export function Game() {
       {ZONES.map((zone) => (
         <Campsite key={zone.id} zone={zone} />
       ))}
+      <CampTVs />
       <FingerPost />
       <ParkedPlane />
       {PEAKS.map((peak) => (
