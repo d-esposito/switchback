@@ -50,17 +50,17 @@ export function FingerPost() {
             {/* arm board, extending toward the trail; pointed tip */}
             <mesh position={[1.05, 0, 0]}>
               <boxGeometry args={[1.9, 0.32, 0.06]} />
-              <meshStandardMaterial color="#8a6a44" flatShading />
+              <meshStandardMaterial color="#5f4730" flatShading />
             </mesh>
             <mesh position={[2.07, 0, 0]} rotation={[0, 0, Math.PI / 4]}>
               <boxGeometry args={[0.23, 0.23, 0.06]} />
-              <meshStandardMaterial color="#8a6a44" flatShading />
+              <meshStandardMaterial color="#5f4730" flatShading />
             </mesh>
             {/* readable from both sides */}
             <Text
               position={[1.02, 0, 0.045]}
               fontSize={0.14}
-              color="#2e2416"
+              color="#f4ecd9"
               anchorX="center"
               anchorY="middle"
             >
@@ -70,7 +70,7 @@ export function FingerPost() {
               position={[1.02, 0, -0.045]}
               rotation={[0, Math.PI, 0]}
               fontSize={0.14}
-              color="#2e2416"
+              color="#f4ecd9"
               anchorX="center"
               anchorY="middle"
             >
@@ -175,16 +175,16 @@ export function Campsite({ zone }: { zone: Zone }) {
         </mesh>
         <mesh position={[0, 1.62, 0]}>
           <boxGeometry args={[2.6, 0.42, 0.07]} />
-          <meshStandardMaterial color="#8a6a44" flatShading />
+          <meshStandardMaterial color="#5f4730" flatShading />
         </mesh>
         <mesh position={[0, 1.16, 0]}>
           <boxGeometry args={[2.6, 0.46, 0.07]} />
-          <meshStandardMaterial color="#7d5f3c" flatShading />
+          <meshStandardMaterial color="#52402c" flatShading />
         </mesh>
         <Text
           position={[0, 1.62, 0.045]}
           fontSize={0.19}
-          color="#2e2416"
+          color="#f4ecd9"
           anchorX="center"
           anchorY="middle"
           maxWidth={2.4}
@@ -194,7 +194,7 @@ export function Campsite({ zone }: { zone: Zone }) {
         <Text
           position={[0, 1.16, 0.045]}
           fontSize={0.105}
-          color="#3a2d1c"
+          color="#e6d9bd"
           anchorX="center"
           anchorY="middle"
           maxWidth={2.4}
@@ -263,7 +263,7 @@ export function FireLookout() {
       ))}
       <mesh position={[0, 6.7, 0]}>
         <boxGeometry args={[2.6, 1.5, 2.6]} />
-        <meshStandardMaterial color="#8a6a44" flatShading />
+        <meshStandardMaterial color="#5f4730" flatShading />
       </mesh>
       <mesh position={[0, 6.85, 0]}>
         <boxGeometry args={[2.65, 0.55, 2.65]} />

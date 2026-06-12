@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { useGame, timeOfDay, type Colors } from "./store";
+import { PlaneMesh } from "./Plane";
 
 interface CharacterProps {
   colors: Colors;
@@ -43,7 +44,7 @@ function getGlowTexture(): THREE.CanvasTexture {
 const worldPos = new THREE.Vector3();
 
 const ANIM_SPEED: Record<string, number> = {
-  idle: 0, walk: 4.3, run: 7.6, jump: 2, climb: 2.2, wave: 0,
+  idle: 0, walk: 4.3, run: 7.6, jump: 2, climb: 2.2, wave: 0, fly: 0,
 };
 
 // rest height of the torso group; legs pivot at the hip just below it
@@ -62,6 +63,7 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow 
   const lampDot = useRef<THREE.Mesh>(null!);
   const glow = useRef<THREE.Sprite>(null!);
   const glowLight = useRef<THREE.PointLight>(null!);
+  const plane = useRef<THREE.Group>(null!);
   const phase = useRef(Math.random() * 10);
 
   useFrame(({ camera }, dt) => {
@@ -94,7 +96,17 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow 
       armR.current.rotation.z = THREE.MathUtils.lerp(armR.current.rotation.z, 0, 0.2);
     }
 
-    if (a === "climb") {
+    // the /plane easter egg: wrap the hiker in their bush plane while flying
+    plane.current.visible = a === "fly";
+
+    if (a === "fly") {
+      // seated pose, hands forward on the yoke
+      legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, 1.35, 0.2);
+      legR.current.rotation.x = THREE.MathUtils.lerp(legR.current.rotation.x, 1.35, 0.2);
+      armL.current.rotation.x = THREE.MathUtils.lerp(armL.current.rotation.x, -0.9, 0.2);
+      armR.current.rotation.x = THREE.MathUtils.lerp(armR.current.rotation.x, -0.9, 0.2);
+      body.current.position.y = BODY_Y;
+    } else if (a === "climb") {
       // alternating overhead reaches
       armL.current.rotation.x = -2.5 + Math.sin(p) * 0.5;
       armR.current.rotation.x = -2.5 + Math.sin(p + Math.PI) * 0.5;
@@ -244,6 +256,11 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow 
           <boxGeometry args={[0.26, 0.1, 0.12]} />
           <meshStandardMaterial color={colors.pack} flatShading />
         </mesh>
+      </group>
+
+      {/* the /plane easter egg: visible while anim === "fly" */}
+      <group ref={plane} visible={false} position={[0, -0.35, -0.3]}>
+        <PlaneMesh />
       </group>
     </group>
   );

@@ -13,7 +13,6 @@ export function VoiceController() {
   const setMicLive = useGame((s) => s.setMicLive);
 
   useEffect(() => {
-    voice.setMyId(net.key);
     voice.onMicState = (on, session) => net.sendMic(on, session);
   }, []);
 

@@ -5,6 +5,8 @@
 //
 // "Proximity" = which tracks we pull, and per-track volume by distance.
 
+import { getPresenceKey } from "../lib/ids";
+
 export const VOICE_RANGE = 28; // silent beyond this many meters
 const PULL_DIST = 32; // start pulling a speaker inside this
 const DROP_DIST = 42; // stop pulling outside this (hysteresis)
@@ -54,7 +56,14 @@ async function api(path: string, method: "POST" | "PUT", body?: unknown): Promis
 }
 
 class VoiceManager {
-  private myKey = "";
+  /**
+   * Our track is named by presence key, derived directly so publishing works
+   * no matter when enable() runs (the login screen calls it before any game
+   * component has mounted — an external setter broke that once).
+   */
+  private get myKey(): string {
+    return getPresenceKey();
+  }
   private mic: MediaStream | null = null;
   private pc: RTCPeerConnection | null = null;
   private sessionId: string | null = null;
@@ -79,10 +88,6 @@ class VoiceManager {
 
   get session(): string | null {
     return this.sessionId;
-  }
-
-  setMyId(key: string): void {
-    this.myKey = key;
   }
 
   private run<T>(op: () => Promise<T>): Promise<T> {
