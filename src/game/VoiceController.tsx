@@ -33,6 +33,7 @@ export function VoiceController() {
         mic: p.mic,
         voiceSession: p.voiceSession,
       }));
+      voice.userVolume = useGame.getState().settings.volVoice;
       voice.updateProximity(playerPosRef.current, list);
       voiceLevelsRef.current = voice.levels();
       setMicLive(voice.isLive());

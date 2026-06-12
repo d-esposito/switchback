@@ -171,6 +171,49 @@ export function heightAt(x: number, z: number): number {
   return h;
 }
 
+// ---------------------------------------------------------------------------
+// Exact rendered-surface height. The visual terrain is a triangle mesh that
+// samples heightAt() every CELL meters — between vertices it deviates from
+// the analytic curve, so anything standing on heightAt() floats or clips on
+// curvy ground. meshHeightAt() reproduces the precise triangle under (x,z):
+// same vertex grid, same B–D diagonal split that THREE.PlaneGeometry uses.
+// ---------------------------------------------------------------------------
+
+export const TERRAIN_SEGMENTS = 400; // World.tsx builds the mesh from this
+const CELL = 2000 / TERRAIN_SEGMENTS; // WORLD_SIZE / segments
+const GRID_HALF = 1000;
+
+const vertexCache = new Map<number, number>();
+function vertexHeight(ix: number, iy: number): number {
+  const key = ix * 100003 + iy;
+  let h = vertexCache.get(key);
+  if (h === undefined) {
+    if (vertexCache.size > 60000) vertexCache.clear();
+    h = heightAt(-GRID_HALF + ix * CELL, -GRID_HALF + iy * CELL);
+    vertexCache.set(key, h);
+  }
+  return h;
+}
+
+export function meshHeightAt(x: number, z: number): number {
+  const fx = (x + GRID_HALF) / CELL;
+  const fz = (z + GRID_HALF) / CELL;
+  const ix = Math.floor(fx);
+  const iy = Math.floor(fz);
+  if (ix < 0 || iy < 0 || ix >= TERRAIN_SEGMENTS || iy >= TERRAIN_SEGMENTS) {
+    return heightAt(x, z);
+  }
+  const u = fx - ix;
+  const w = fz - iy;
+  const hA = vertexHeight(ix, iy);
+  const hB = vertexHeight(ix, iy + 1);
+  const hC = vertexHeight(ix + 1, iy + 1);
+  const hD = vertexHeight(ix + 1, iy);
+  return u + w <= 1
+    ? hA + u * (hD - hA) + w * (hB - hA)
+    : hC + (1 - u) * (hB - hC) + (1 - w) * (hD - hC);
+}
+
 /** Ground normal via central differences. */
 export function normalAt(x: number, z: number, eps = 1.5): THREE.Vector3 {
   const hl = heightAt(x - eps, z);

@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { useQuery } from "convex/react";
 import * as THREE from "three";
 import { api } from "../../convex/_generated/api";
-import { heightAt, normalAt } from "./terrain";
+import { meshHeightAt, normalAt } from "./terrain";
 import { tentGroundY } from "./Landmarks";
 import { ropesRef, tentsRef } from "./sharedRefs";
 
@@ -11,7 +11,7 @@ function Rope({ x, z }: { x: number; z: number }) {
   const segments: { pos: THREE.Vector3; rot: THREE.Euler; len: number }[] = [];
   let cx = x;
   let cz = z;
-  let cy = heightAt(x, z);
+  let cy = meshHeightAt(x, z);
   for (let i = 0; i < 8; i++) {
     const n = normalAt(cx, cz);
     // fall line = downhill direction
@@ -23,7 +23,7 @@ function Rope({ x, z }: { x: number; z: number }) {
     dz /= mag;
     const nx = cx + dx * 1.6;
     const nz = cz + dz * 1.6;
-    const ny = heightAt(nx, nz);
+    const ny = meshHeightAt(nx, nz);
     const mid = new THREE.Vector3((cx + nx) / 2, (cy + ny) / 2 + 0.06, (cz + nz) / 2);
     const dir = new THREE.Vector3(nx - cx, ny - cy, nz - cz);
     const len = dir.length();
@@ -39,7 +39,7 @@ function Rope({ x, z }: { x: number; z: number }) {
   return (
     <group>
       {/* anchor stake */}
-      <mesh position={[x, heightAt(x, z) + 0.25, z]}>
+      <mesh position={[x, meshHeightAt(x, z) + 0.25, z]}>
         <cylinderGeometry args={[0.04, 0.05, 0.5, 5]} />
         <meshStandardMaterial color="#5a4128" flatShading />
       </mesh>

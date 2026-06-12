@@ -200,7 +200,7 @@ export function HUD() {
         <div><kbd>E</kbd> interact · <kbd>B</kbd> cairn · <kbd>C</kbd> craft</div>
         <div><kbd>R</kbd> fix rope · <kbd>T</kbd> pitch tent · <kbd>M</kbd> sound</div>
         {VOICE_ENABLED && <div><kbd>V</kbd> hold to talk to nearby hikers</div>}
-        <div><kbd>/</kbd> commands (try /help or /tp)</div>
+        <div><kbd>/</kbd> commands (try /help or /tp) · <kbd>esc</kbd> settings</div>
       </div>
     </div>
   );

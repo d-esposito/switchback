@@ -1,13 +1,13 @@
 import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { heightAt } from "./terrain";
+import { meshHeightAt } from "./terrain";
 import { useGame, showToast, uiCaptured } from "./store";
 import { playerPosRef } from "./sharedRefs";
 
 /** A little stack of three stones. Player-built, persistent, visible to all. */
 function CairnStack({ x, z }: { x: number; z: number }) {
-  const y = heightAt(x, z);
+  const y = meshHeightAt(x, z);
   return (
     <group position={[x, y, z]}>
       <mesh position={[0, 0.12, 0]}>
@@ -41,7 +41,7 @@ export function Cairns() {
       if (now - lastBuilt.current < 5000) return; // gentle rate limit
       const p = playerPosRef.current;
       lastBuilt.current = now;
-      void build({ x: p.x, y: heightAt(p.x, p.z), z: p.z, builtBy: name });
+      void build({ x: p.x, y: meshHeightAt(p.x, p.z), z: p.z, builtBy: name });
       showToast("You stacked a cairn. It will outlast your hike.");
     };
     window.addEventListener("keydown", down);

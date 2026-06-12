@@ -18,6 +18,8 @@ class AudioEngine {
   private rain!: GainNode;
   private fire!: GainNode;
   private muted = false;
+  /** user volume settings (0..1), pushed from the settings panel */
+  private vols = { master: 1, ambience: 1, steps: 1 };
   private params: AudioParams = {
     altitude: 0, rain: 0, night: 0, nearFire: false, inForest: false, moving: false,
   };
@@ -233,7 +235,7 @@ class AudioEngine {
     filter.frequency.value = surface === "rock" ? 2400 : surface === "snow" ? 500 : 900;
     const g = ctx.createGain();
     const t0 = ctx.currentTime;
-    g.gain.setValueAtTime(surface === "snow" ? 0.05 : 0.075, t0);
+    g.gain.setValueAtTime((surface === "snow" ? 0.05 : 0.075) * this.vols.steps, t0);
     g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.07);
     src.connect(filter);
     filter.connect(g);
@@ -253,16 +255,24 @@ class AudioEngine {
   }
 
   /** Smoothly retarget the ambient layer gains. Call ~4×/second. */
+  setVolumes(v: { master: number; ambience: number; steps: number }): void {
+    this.vols = v;
+    if (this.ctx && !this.muted) {
+      this.master.gain.setTargetAtTime(0.6 * v.master, this.ctx.currentTime, 0.1);
+    }
+  }
+
   update(p: AudioParams): void {
     this.params = p;
     const ctx = this.ctx;
     if (!ctx) return;
     // setTargetAtTime is safe under repeated calls (no overlapping ramp pile-up)
     const t = ctx.currentTime;
-    this.wind.gain.setTargetAtTime(0.025 + p.altitude * 0.11 + p.rain * 0.03, t, 0.25);
-    this.rain.gain.setTargetAtTime(p.rain * 0.3, t, 0.25);
+    const amb = this.vols.ambience;
+    this.wind.gain.setTargetAtTime((0.025 + p.altitude * 0.11 + p.rain * 0.03) * amb, t, 0.25);
+    this.rain.gain.setTargetAtTime(p.rain * 0.3 * amb, t, 0.25);
     // faint warm rumble under the crackle scheduler's discrete pops
-    this.fire.gain.setTargetAtTime(p.nearFire ? 0.03 : 0, t, 0.25);
+    this.fire.gain.setTargetAtTime((p.nearFire ? 0.03 : 0) * amb, t, 0.25);
   }
 
   setMuted(m: boolean): void {

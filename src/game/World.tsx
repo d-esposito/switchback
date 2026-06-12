@@ -1,9 +1,10 @@
 import { useMemo } from "react";
 import * as THREE from "three";
 import { WORLD_SIZE, WATER_Y } from "./config";
-import { heightAt, normalAt, colorAt, scatterProps } from "./terrain";
+import { heightAt, normalAt, colorAt, scatterProps, TERRAIN_SEGMENTS } from "./terrain";
 
-const SEGMENTS = 400; // 5m cells over the 2km world
+// the mesh MUST use the same grid meshHeightAt() reproduces for ground contact
+const SEGMENTS = TERRAIN_SEGMENTS;
 
 function buildTerrainGeometry(): THREE.BufferGeometry {
   const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, SEGMENTS, SEGMENTS);

@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { heightAt } from "./terrain";
+import { meshHeightAt } from "./terrain";
 import { planeRef } from "./sharedRefs";
 
 /**
@@ -73,7 +73,7 @@ export function ParkedPlane() {
     const p = planeRef.parked;
     group.current.visible = p !== null;
     if (p) {
-      group.current.position.set(p.x, heightAt(p.x, p.z), p.z);
+      group.current.position.set(p.x, meshHeightAt(p.x, p.z), p.z);
       group.current.rotation.y = p.rot;
     }
   });
