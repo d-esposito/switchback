@@ -4,7 +4,7 @@ import { api } from "../../convex/_generated/api";
 import { useGame, showToast, uiCaptured } from "../game/store";
 import { setWeatherOverride } from "../game/weather";
 import { net } from "../game/net";
-import { playerPosRef, teleportRef } from "../game/sharedRefs";
+import { playerPosRef, teleportRef, planeRef } from "../game/sharedRefs";
 import { ZONES, zoneById } from "../game/config";
 
 const TIME_PHASES: Record<string, number> = {
@@ -25,7 +25,7 @@ const HELP = [
   "/weather <clear|rain|mist|off> — local skies, just for you",
   "/where — where am I?",
   "/who — who's on the mountain",
-  "/wave · /yeet · /gorp · /pika",
+  "/wave · /yeet · /gorp · /pika · and rumor has it pilots know one more",
 ];
 
 export function CommandBar() {
@@ -150,6 +150,13 @@ export function CommandBar() {
         showToast("EEEEP! 🐹");
         setTimeout(() => window.dispatchEvent(new KeyboardEvent("keydown", { code: "KeyQ" })), 50);
         break;
+
+      case "plane": {
+        const p = playerPosRef.current;
+        planeRef.parked = { x: p.x + 5, z: p.z + 2, rot: Math.random() * Math.PI * 2 };
+        showToast("A bush plane sputters up beside you. Hop in! (E)");
+        break;
+      }
 
       default:
         showToast(`Unknown command "/${cmd}" — try /help`);

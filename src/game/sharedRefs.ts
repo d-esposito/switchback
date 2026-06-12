@@ -33,3 +33,8 @@ export const teleportRef = {
   /** set stamina to full (for /gorp) */
   refill: false,
 };
+
+/** The /plane Easter egg: where the summoned plane is parked (local only). */
+export const planeRef = {
+  parked: null as { x: number; z: number; rot: number } | null,
+};

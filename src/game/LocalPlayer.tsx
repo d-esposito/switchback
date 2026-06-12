@@ -8,7 +8,7 @@ import { heightAt, normalAt } from "./terrain";
 import { useGame, timeOfDay, showToast } from "./store";
 import { weatherAt } from "./weather";
 import { net } from "./net";
-import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef, teleportRef } from "./sharedRefs";
+import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef, teleportRef, planeRef } from "./sharedRefs";
 import { isAvailable, collect, type ResourceNode } from "./resources";
 import { getDeviceId } from "../lib/ids";
 import {
@@ -62,6 +62,7 @@ export function LocalPlayer() {
   const stamina = useRef(100);
   const anim = useRef("idle");
   const waveUntil = useRef(0);
+  const flying = useRef(false);
   const stepPhase = useRef(0);
   const lamp = useRef<THREE.SpotLight>(null!);
   const lampTarget = useRef<THREE.Object3D>(null!);
@@ -106,6 +107,20 @@ export function LocalPlayer() {
       const p = pos.current;
 
       if (e.code === "KeyE") {
+        // hop out of / into the plane first
+        if (flying.current) {
+          flying.current = false;
+          planeRef.parked = { x: p.x + 3, z: p.z, rot: heading.current };
+          showToast("You hop out. The plane waits politely.");
+          return;
+        }
+        const parked = planeRef.parked;
+        if (parked && Math.hypot(p.x - parked.x, p.z - parked.z) < 4) {
+          flying.current = true;
+          planeRef.parked = null;
+          showToast("Contact! W boost · S slow · mouse steers · E to hop out");
+          return;
+        }
         const near = PEAKS.find(
           (pk) => Math.hypot(p.x - pk.x, p.z - pk.z) < REGISTER_RADIUS
         );
@@ -247,6 +262,39 @@ export function LocalPlayer() {
       teleportRef.refill = false;
     }
 
+    const ui = useGame.getState();
+    let nearFire = false;
+    let speed = 0;
+    let nY = 1;
+
+    if (flying.current) {
+      // --- the /plane easter egg: arcade flight along the camera's aim ---
+      const boost = k.KeyW ? 46 : k.KeyS ? 14 : 28;
+      const cosP = Math.cos(pitch.current);
+      const fx = -Math.sin(yaw.current) * cosP;
+      const fy = -Math.sin(pitch.current);
+      const fz = -Math.cos(yaw.current) * cosP;
+      p.x += fx * boost * dt;
+      p.y += fy * boost * dt;
+      p.z += fz * boost * dt;
+      const rr = Math.hypot(p.x, p.z);
+      if (rr > PLAY_RADIUS) {
+        p.x *= PLAY_RADIUS / rr;
+        p.z *= PLAY_RADIUS / rr;
+      }
+      const gnd = heightAt(p.x, p.z);
+      if (p.y < gnd + 1.2) p.y = gnd + 1.2; // belly-skim, never crash
+      if (p.y > 380) p.y = 380;
+      heading.current = Math.atan2(fx, fz);
+      speed = boost;
+      speedRef.current = boost;
+      grounded.current = false;
+      vy.current = 0;
+      anim.current = "fly";
+      setResting(false);
+      setStamina(stamina.current);
+    } else {
+
     // --- movement intent (camera-relative) ---
     let ix = 0;
     let iz = 0;
@@ -254,16 +302,15 @@ export function LocalPlayer() {
     if (k.KeyS) iz += 1;
     if (k.KeyA) ix -= 1;
     if (k.KeyD) ix += 1;
-    const ui = useGame.getState();
     const hasInput =
       (ix !== 0 || iz !== 0) && !ui.activePeak && !ui.craftOpen && !ui.commandOpen;
 
     const wantRun = !!k.ShiftLeft || !!k.ShiftRight;
     const canRun = stamina.current > 0.5;
-    let speed = hasInput ? (wantRun && canRun ? RUN_SPEED : WALK_SPEED) : 0;
+    speed = hasInput ? (wantRun && canRun ? RUN_SPEED : WALK_SPEED) : 0;
 
     // --- slope tiers ---
-    const nY = normalAt(p.x, p.z).y;
+    nY = normalAt(p.x, p.z).y;
     let scrambling = false;
     let climbing = false;
     if (hasInput && speed > 0) {
@@ -338,7 +385,7 @@ export function LocalPlayer() {
     }
 
     // --- stamina ---
-    const nearFire =
+    nearFire =
       ZONES.some((zn) => Math.hypot(p.x - zn.camp.x, p.z - zn.camp.z) < CAMPFIRE_RADIUS) ||
       nearAny(tentsRef.current, p.x, p.z, TENT_AURA_RADIUS);
     const rainNow = weatherAt(ui.clock).rain;
@@ -369,6 +416,8 @@ export function LocalPlayer() {
             : performance.now() < waveUntil.current
               ? "wave"
               : "idle";
+
+    } // end walking physics
 
     // --- visuals ---
     group.current.position.copy(p);
@@ -404,14 +453,20 @@ export function LocalPlayer() {
       lamp.current.position.set(p.x, p.y + 1.45, p.z);
     }
 
-    // --- interaction prompt (register > gather > craft) ---
+    // --- interaction prompt (plane > register > gather > craft) ---
     let promptText: string | null = null;
-    if (!ui.activePeak && !ui.craftOpen) {
-      const nearPeak = PEAKS.find(
-        (pk) => Math.hypot(p.x - pk.x, p.z - pk.z) < REGISTER_RADIUS
-      );
-      const node = nearPeak ? null : nearestNode(p.x, p.z);
-      if (nearPeak) {
+    if (flying.current) {
+      promptText = "Press E — hop out";
+    } else if (!ui.activePeak && !ui.craftOpen) {
+      const parked = planeRef.parked;
+      const nearPlane = parked && Math.hypot(p.x - parked.x, p.z - parked.z) < 4;
+      const nearPeak = nearPlane
+        ? null
+        : PEAKS.find((pk) => Math.hypot(p.x - pk.x, p.z - pk.z) < REGISTER_RADIUS);
+      const node = nearPlane || nearPeak ? null : nearestNode(p.x, p.z);
+      if (nearPlane) {
+        promptText = "Press E — hop in the plane";
+      } else if (nearPeak) {
         promptText = `Press E — sign the ${nearPeak.name} register`;
       } else if (node) {
         promptText = `Press E — gather ${KIND_LABEL[node.kind]}`;
