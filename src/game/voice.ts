@@ -264,6 +264,196 @@ class VoiceManager {
     }
   }
 
+  // ----- campsite TV screen share ------------------------------------------
+
+  private screenTrack: MediaStreamTrack | null = null;
+  private screenMid: string | null = null;
+  /** SFU track name of our live screen share (null = not presenting). */
+  screenTrackName: string | null = null;
+  /** fires when the share ends outside our control (browser Stop button,
+   * window closed, connection teardown) so the owner can release the TV */
+  onScreenEnded: () => void = () => {};
+
+  /** the raw local screen track, for the presenter's own TV preview */
+  get screenMediaTrack(): MediaStreamTrack | null {
+    return this.screenTrack;
+  }
+
+  get screenSharing(): boolean {
+    return this.screenTrack !== null;
+  }
+
+  /**
+   * Ask the browser for a screen/window/tab and publish it on the existing
+   * SFU connection. Low frame rate + "detail" hint: standup boards are
+   * static text, so favor sharpness over motion and keep bitrate tiny.
+   */
+  async startScreenShare(): Promise<boolean> {
+    if (this.screenTrack) return true;
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: { ideal: 5, max: 10 }, width: { max: 1920 }, height: { max: 1080 } },
+        audio: false,
+      });
+    } catch {
+      return false; // user dismissed the picker (or OS permission missing)
+    }
+    const track = stream.getVideoTracks()[0];
+    if (!track) return false;
+    track.contentHint = "detail";
+    track.addEventListener("ended", () => {
+      // browser's own "Stop sharing" bar
+      void this.stopScreenShare();
+      this.onScreenEnded();
+    });
+    this.screenTrack = track;
+    // "~" only — the SFU accepts "#" in a trackName at publish time but the
+    // track is unpullable forever after (verified against the live API)
+    const name = `${this.myKey}~screen`;
+    try {
+      await this.run(async () => {
+        const pc = await this.ensureConnection();
+        const tx = pc.addTransceiver(track, { direction: "sendonly" });
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        const res = await api(`/sessions/${this.sessionId}/tracks/new`, "POST", {
+          sessionDescription: { type: "offer", sdp: offer.sdp },
+          tracks: [{ location: "local", mid: tx.mid, trackName: name }],
+        });
+        if (res.tracks?.[0]?.error) throw new Error("screen publish rejected");
+        if (res.sessionDescription) await pc.setRemoteDescription(res.sessionDescription);
+        this.screenMid = tx.mid;
+      }, "screen-publish");
+      this.screenTrackName = name;
+      return true;
+    } catch {
+      track.stop();
+      this.screenTrack = null;
+      return false;
+    }
+  }
+
+  async stopScreenShare(): Promise<void> {
+    const track = this.screenTrack;
+    const mid = this.screenMid;
+    this.screenTrack = null;
+    this.screenMid = null;
+    this.screenTrackName = null;
+    track?.stop();
+    if (!mid || !this.pc || !this.sessionId) return;
+    await this.run(async () => {
+      if (!this.pc || !this.sessionId) return;
+      const res = await api(`/sessions/${this.sessionId}/tracks/close`, "PUT", {
+        tracks: [{ mid }],
+        force: true,
+      });
+      if (res.requiresImmediateRenegotiation && res.sessionDescription) {
+        await this.pc.setRemoteDescription(res.sessionDescription);
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        await api(`/sessions/${this.sessionId}/renegotiate`, "PUT", {
+          sessionDescription: { type: "answer", sdp: answer.sdp },
+        });
+      }
+    }, "screen-close").catch((err) => console.warn("[voice] screen close failed:", err));
+  }
+
+  // ----- TV viewing: pull a presenter's video track -------------------------
+
+  private videoPulls = new Map<
+    string,
+    { session: string; trackName: string; mid: string | null; video: HTMLVideoElement }
+  >();
+  private pendingVideo = new Set<string>();
+  private videoFailedAt = new Map<string, number>();
+
+  /** The <video> element for an active TV pull (drive a THREE.VideoTexture). */
+  videoElement(campId: string): HTMLVideoElement | null {
+    return this.videoPulls.get(campId)?.video ?? null;
+  }
+
+  /**
+   * Reconcile one TV with what the roster says. Pass tv=null (or wantWatch
+   * false) to drop the pull; idempotent and safe to call every frame.
+   */
+  updateTv(campId: string, tv: { session: string; trackName: string } | null, wantWatch: boolean): void {
+    const have = this.videoPulls.get(campId);
+    const want = wantWatch && tv !== null;
+    if (have && (!want || have.session !== tv!.session || have.trackName !== tv!.trackName)) {
+      void this.run(() => this.unpullVideo(campId), "tv-unpull:" + campId);
+    } else if (!have && want && !this.pendingVideo.has(campId)) {
+      const backedOff =
+        Date.now() - (this.videoFailedAt.get(campId) ?? 0) < FAIL_BACKOFF_MS;
+      if (backedOff) return;
+      const { session, trackName } = tv!;
+      this.pendingVideo.add(campId);
+      void this.run(() =>
+        this.pullVideo(campId, session, trackName)
+          .catch(() => {
+            this.videoFailedAt.set(campId, Date.now());
+          })
+          .finally(() => this.pendingVideo.delete(campId)),
+        "tv-pull:" + campId
+      );
+    }
+  }
+
+  private async pullVideo(campId: string, session: string, trackName: string): Promise<void> {
+    if (this.videoPulls.has(campId)) await this.unpullVideo(campId);
+    const pc = await this.ensureConnection();
+    const res = await api(`/sessions/${this.sessionId}/tracks/new`, "POST", {
+      tracks: [{ location: "remote", sessionId: session, trackName }],
+    });
+    const track = res.tracks?.[0];
+    if (!track || track.error || !track.mid) {
+      throw new Error("tv pull failed for " + campId);
+    }
+    if (res.requiresImmediateRenegotiation && res.sessionDescription) {
+      await pc.setRemoteDescription(res.sessionDescription);
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      await api(`/sessions/${this.sessionId}/renegotiate`, "PUT", {
+        sessionDescription: { type: "answer", sdp: answer.sdp },
+      });
+    }
+    const stream = this.midStreams.get(track.mid);
+    const video = document.createElement("video");
+    video.muted = true;
+    video.autoplay = true;
+    video.playsInline = true;
+    if (stream) {
+      video.srcObject = stream;
+      void video.play().catch(() => {});
+    }
+    this.videoPulls.set(campId, { session, trackName, mid: track.mid, video });
+  }
+
+  private async unpullVideo(campId: string): Promise<void> {
+    const p = this.videoPulls.get(campId);
+    if (!p) return;
+    this.videoPulls.delete(campId);
+    p.video.srcObject = null;
+    if (p.mid) this.midStreams.delete(p.mid);
+    if (!this.pc || !this.sessionId || !p.mid) return;
+    try {
+      const res = await api(`/sessions/${this.sessionId}/tracks/close`, "PUT", {
+        tracks: [{ mid: p.mid }],
+        force: true,
+      });
+      if (res.requiresImmediateRenegotiation && res.sessionDescription) {
+        await this.pc.setRemoteDescription(res.sessionDescription);
+        const answer = await this.pc.createAnswer();
+        await this.pc.setLocalDescription(answer);
+        await api(`/sessions/${this.sessionId}/renegotiate`, "PUT", {
+          sessionDescription: { type: "answer", sdp: answer.sdp },
+        });
+      }
+    } catch (err) {
+      console.warn("[voice] tv track close failed — egress may leak:", err);
+    }
+  }
+
   setPtt(held: boolean): void {
     this.transmitting = held;
     this.applyTransmit();
@@ -391,6 +581,16 @@ class VoiceManager {
       p.audio.srcObject = null;
     }
     this.pulls.clear();
+    for (const p of this.videoPulls.values()) p.video.srcObject = null;
+    this.videoPulls.clear();
+    if (this.screenTrack) {
+      // the SFU session died with the connection; the share can't survive it
+      this.screenTrack.stop();
+      this.screenTrack = null;
+      this.screenMid = null;
+      this.screenTrackName = null;
+      this.onScreenEnded();
+    }
     this.midStreams.clear();
     this.pc?.close();
     this.pc = null;

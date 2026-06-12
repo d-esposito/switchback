@@ -8,7 +8,7 @@ import { heightAt, meshHeightAt, normalAt } from "./terrain";
 import { useGame, timeOfDay, showToast } from "./store";
 import { weatherAt } from "./weather";
 import { net } from "./net";
-import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef, teleportRef, planeRef } from "./sharedRefs";
+import { playerPosRef, resourceNodesRef, resourceVersionRef, ropesRef, tentsRef, stepRef, teleportRef, planeRef, tvRef } from "./sharedRefs";
 import { isAvailable, collect, type ResourceNode } from "./resources";
 import { getDeviceId } from "../lib/ids";
 import {
@@ -119,6 +119,11 @@ export function LocalPlayer() {
           flying.current = true;
           planeRef.parked = null;
           showToast("Contact! W boost · S slow · mouse steers · E to hop out");
+          return;
+        }
+        const tv = tvRef.current;
+        if (tv) {
+          tv.act();
           return;
         }
         const near = PEAKS.find(
@@ -470,6 +475,8 @@ export function LocalPlayer() {
       const node = nearPlane || nearPeak ? null : nearestNode(p.x, p.z);
       if (nearPlane) {
         promptText = "Press E — hop in the plane";
+      } else if (tvRef.current) {
+        promptText = tvRef.current.label;
       } else if (nearPeak) {
         promptText = `Press E — sign the ${nearPeak.name} register`;
       } else if (node) {

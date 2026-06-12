@@ -890,6 +890,9 @@ var Mountain = class extends Server {
   static {
     __name(this, "Mountain");
   }
+  /** campId -> presenter. In-memory: if the DO restarts every socket drops
+   * and presenters re-claim on reconnect, so durable storage buys nothing. */
+  tvs = /* @__PURE__ */ new Map();
   onConnect(conn, ctx) {
     const q = new URL(ctx.request.url).searchParams;
     let colors;
@@ -916,7 +919,9 @@ var Mountain = class extends Server {
     for (const other of this.getConnections()) {
       if (other.id !== conn.id && other.state) roster.push(other.state);
     }
-    conn.send(JSON.stringify({ t: "roster", players: roster }));
+    const tvs = {};
+    for (const [campId, tv] of this.tvs) tvs[campId] = tv;
+    conn.send(JSON.stringify({ t: "roster", players: roster, tvs }));
     this.broadcast(JSON.stringify({ t: "join", p: state }), [conn.id]);
   }
   onMessage(conn, message) {
@@ -964,6 +969,25 @@ var Mountain = class extends Server {
         );
         break;
       }
+      case "tv": {
+        if (typeof m.campId !== "string") return;
+        const current = this.tvs.get(m.campId);
+        if (m.on === true) {
+          if (typeof m.session !== "string" || typeof m.trackName !== "string") return;
+          if (current && current.key !== s.key) {
+            conn.send(JSON.stringify({ t: "tvBusy", campId: m.campId }));
+            return;
+          }
+          const tv = { key: s.key, session: m.session, trackName: m.trackName };
+          this.tvs.set(m.campId, tv);
+          this.broadcast(JSON.stringify({ t: "tv", campId: m.campId, on: true, ...tv }));
+        } else {
+          if (!current || current.key !== s.key) return;
+          this.tvs.delete(m.campId);
+          this.broadcast(JSON.stringify({ t: "tv", campId: m.campId, on: false }));
+        }
+        break;
+      }
       case "sig": {
         if (typeof m.to !== "string") return;
         for (const other of this.getConnections()) {
@@ -980,6 +1004,12 @@ var Mountain = class extends Server {
   }
   onClose(conn) {
     if (conn.state) {
+      for (const [campId, tv] of this.tvs) {
+        if (tv.key === conn.state.key) {
+          this.tvs.delete(campId);
+          this.broadcast(JSON.stringify({ t: "tv", campId, on: false }), [conn.id]);
+        }
+      }
       this.broadcast(JSON.stringify({ t: "leave", key: conn.state.key }), [conn.id]);
     }
   }

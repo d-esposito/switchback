@@ -38,3 +38,8 @@ export const teleportRef = {
 export const planeRef = {
   parked: null as { x: number; z: number; rot: number } | null,
 };
+
+/** Nearest campsite TV in interact range: prompt label + E action. */
+export const tvRef = {
+  current: null as null | { campId: string; label: string; act: () => void },
+};
