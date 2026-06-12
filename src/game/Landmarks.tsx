@@ -129,19 +129,28 @@ export function Campfire({ x, z }: { x: number; z: number }) {
   );
 }
 
+/** Lowest ground under a tent's footprint — tents must never hover downhill. */
+export function tentGroundY(x: number, z: number): number {
+  let y = heightAt(x, z);
+  for (const [dx, dz] of [[1.1, 1.1], [1.1, -1.1], [-1.1, 1.1], [-1.1, -1.1]] as const) {
+    y = Math.min(y, heightAt(x + dx, z + dz));
+  }
+  return y;
+}
+
 function CampTent({ x, z, rot, color }: { x: number; z: number; rot: number; color: string }) {
-  const y = heightAt(x, z);
+  const y = tentGroundY(x, z);
   return (
     <group position={[x, y, z]} rotation={[0, rot, 0]}>
-      <mesh position={[0, 0.55, 0]} rotation={[0, 0, Math.PI / 4]}>
+      <mesh position={[0, 0.42, 0]} rotation={[0, 0, Math.PI / 4]}>
         <boxGeometry args={[1.15, 1.15, 1.9]} />
         <meshStandardMaterial color={color} flatShading />
       </mesh>
-      <mesh position={[0, 0.38, 0.96]} rotation={[0, 0, Math.PI / 4]}>
+      <mesh position={[0, 0.28, 0.96]} rotation={[0, 0, Math.PI / 4]}>
         <boxGeometry args={[0.62, 0.62, 0.03]} />
         <meshStandardMaterial color="#1c2a1f" flatShading />
       </mesh>
-      <mesh position={[0, 1.18, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 1.05, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.035, 0.035, 2.1, 5]} />
         <meshStandardMaterial color="#7a5c3a" flatShading />
       </mesh>
