@@ -69,6 +69,12 @@ class VoiceManager {
   private sessionId: string | null = null;
   private published = false;
   private pulls = new Map<string, Pull>();
+  /** keys with a pull op queued or in flight — pulls take ~1s of signaling,
+   * and the 200ms proximity tick would otherwise queue duplicates. Each
+   * duplicate is a second forwarded stream (billed egress) whose gain node
+   * gets orphaned at an audible volume when the map entry is overwritten —
+   * the "everyone is audible across the whole map forever" bug. */
+  private pendingPulls = new Set<string>();
   private midStreams = new Map<string, MediaStream>();
   private failedAt = new Map<string, number>();
   private analyserCtx: AudioContext | null = null;
@@ -92,8 +98,20 @@ class VoiceManager {
     return this.sessionId;
   }
 
-  private run<T>(op: () => Promise<T>): Promise<T> {
-    const result = this.queue.then(op);
+  private run<T>(op: () => Promise<T>, label = "op"): Promise<T> {
+    const queuedAt = import.meta.env.DEV ? performance.now() : 0;
+    const result = this.queue.then(() => {
+      if (import.meta.env.DEV) {
+        const waited = Math.round(performance.now() - queuedAt);
+        const startedAt = performance.now();
+        return op().finally(() =>
+          console.log(
+            `[voice] ${label} waited=${waited}ms ran=${Math.round(performance.now() - startedAt)}ms`
+          )
+        );
+      }
+      return op();
+    });
     this.queue = result.then(
       () => undefined,
       () => undefined
@@ -136,7 +154,7 @@ class VoiceManager {
     }
     this.applyTransmit();
     try {
-      await this.run(() => this.publish());
+      await this.run(() => this.publish(), "publish");
       this.onMicState(true, this.sessionId);
       return true;
     } catch {
@@ -162,6 +180,9 @@ class VoiceManager {
   }
 
   private async pull(key: string, session: string): Promise<void> {
+    // never stack a second pull on top of a live one — an overwritten entry
+    // would leave its gain node connected (and audible) with no owner
+    if (this.pulls.has(key)) await this.unpull(key);
     const pc = await this.ensureConnection();
     const res = await api(`/sessions/${this.sessionId}/tracks/new`, "POST", {
       tracks: [{ location: "remote", sessionId: session, trackName: key }],
@@ -277,14 +298,30 @@ class VoiceManager {
       const backedOff = now - (this.failedAt.get(r.deviceId) ?? 0) < FAIL_BACKOFF_MS;
 
       if (pull && (!speakable || d > DROP_DIST || pull.session !== r.voiceSession)) {
-        void this.run(() => this.unpull(r.deviceId));
-      } else if (!pull && speakable && d < PULL_DIST && !backedOff) {
+        // silence NOW — the queued unpull may sit behind slow signaling ops,
+        // and an audible gain must never outlive its welcome
+        if (pull.gain && this.analyserCtx) {
+          pull.gain.gain.setTargetAtTime(0, this.analyserCtx.currentTime, 0.05);
+        } else {
+          pull.audio.volume = 0;
+        }
+        void this.run(() => this.unpull(r.deviceId), "unpull:" + r.deviceId.slice(-6));
+      } else if (
+        !pull &&
+        speakable &&
+        d < PULL_DIST &&
+        !backedOff &&
+        !this.pendingPulls.has(r.deviceId)
+      ) {
         const session = r.voiceSession!;
+        this.pendingPulls.add(r.deviceId);
         void this.run(() =>
-          this.pull(r.deviceId, session).catch(() => {
-            this.failedAt.set(r.deviceId, Date.now());
-            this.pulls.delete(r.deviceId);
-          })
+          this.pull(r.deviceId, session)
+            .catch(() => {
+              this.failedAt.set(r.deviceId, Date.now());
+            })
+            .finally(() => this.pendingPulls.delete(r.deviceId)),
+          "pull:" + r.deviceId.slice(-6)
         );
       } else if (pull) {
         const v = Math.pow(Math.max(0, 1 - d / VOICE_RANGE), 1.6) * this.userVolume;
@@ -297,7 +334,7 @@ class VoiceManager {
       }
     }
     for (const key of [...this.pulls.keys()]) {
-      if (!seen.has(key)) void this.run(() => this.unpull(key));
+      if (!seen.has(key)) void this.run(() => this.unpull(key), "sweep:" + key.slice(-6));
     }
   }
 
@@ -362,7 +399,7 @@ class VoiceManager {
     this.published = false;
     if (wasPublished && this.mic) {
       // re-publish on a fresh session so others can keep hearing us
-      void this.run(() => this.publish()).then(
+      void this.run(() => this.publish(), "republish").then(
         () => this.onMicState(true, this.sessionId),
         () => this.onMicState(false, null)
       );
@@ -371,3 +408,9 @@ class VoiceManager {
 }
 
 export const voice = new VoiceManager();
+
+// dev observability: the running instance is unreachable from eval-imported
+// module copies, so expose it for test harnesses
+if (import.meta.env.DEV) {
+  (window as unknown as { __voice?: VoiceManager }).__voice = voice;
+}
