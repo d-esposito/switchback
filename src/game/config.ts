@@ -89,13 +89,13 @@ export const LOOKOUT = { x: -700, z: -240 }; // on the second mesa
 
 // Trail network: hub spokes to every camp (color-stamped into the terrain)
 export const TRAILS: [number, number][][] = [
-  // hub → Pika Camp → peak base
+  // hub → Pika Camp → last flat ground below the scramble to the wall
   [
     [0, 10],
     [12, -140],
     [-28, -300],
     [0, -480],
-    [0, -555],
+    [0, -500],
   ],
   // hub → Dolphin Cove
   [

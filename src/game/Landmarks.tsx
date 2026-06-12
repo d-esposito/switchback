@@ -2,8 +2,86 @@ import { useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
-import { LOOKOUT, type Peak, type Zone } from "./config";
+import { HUB, LOOKOUT, TRAILS, ZONES, type Peak, type Zone } from "./config";
 import { heightAt } from "./terrain";
+
+// which zone each trail in TRAILS leads to (same order as config.TRAILS)
+const TRAIL_DEST = ["pikas", "dolphins", "wallabies", "armadillos"];
+
+function trailLength(line: [number, number][]): number {
+  let len = 0;
+  for (let i = 0; i < line.length - 1; i++) {
+    len += Math.hypot(line[i + 1][0] - line[i][0], line[i + 1][1] - line[i][1]);
+  }
+  return len;
+}
+
+/**
+ * The hub fingerpost: one arm per trail, each rotated so it points along the
+ * trail's ACTUAL first leg (bearing computed from the polyline, not guessed).
+ */
+export function FingerPost() {
+  const px = HUB.camp.x - 6;
+  const pz = HUB.camp.z - 2;
+  const py = heightAt(px, pz);
+
+  const arms = TRAILS.map((line, i) => {
+    const zone = ZONES.find((z) => z.id === TRAIL_DEST[i])!;
+    // bearing of the first leg, measured from the post (not the trail origin)
+    const dx = line[1][0] - px;
+    const dz = line[1][1] - pz;
+    const mag = Math.hypot(dx, dz);
+    // rotate so the arm's +X axis points along (dx, dz)
+    const rotY = Math.atan2(-dz / mag, dx / mag);
+    const dist = Math.round(trailLength(line) / 10) * 10;
+    return { zone, rotY, dist };
+  });
+
+  return (
+    <group position={[px, py, pz]}>
+      <mesh position={[0, 1.4, 0]}>
+        <cylinderGeometry args={[0.09, 0.12, 2.8, 6]} />
+        <meshStandardMaterial color="#6e5135" flatShading />
+      </mesh>
+      {arms.map((arm, i) => {
+        const y = 2.45 - i * 0.42;
+        return (
+          <group key={arm.zone.id} rotation={[0, arm.rotY, 0]} position={[0, y, 0]}>
+            {/* arm board, extending toward the trail; pointed tip */}
+            <mesh position={[1.05, 0, 0]}>
+              <boxGeometry args={[1.9, 0.32, 0.06]} />
+              <meshStandardMaterial color="#8a6a44" flatShading />
+            </mesh>
+            <mesh position={[2.07, 0, 0]} rotation={[0, 0, Math.PI / 4]}>
+              <boxGeometry args={[0.23, 0.23, 0.06]} />
+              <meshStandardMaterial color="#8a6a44" flatShading />
+            </mesh>
+            {/* readable from both sides */}
+            <Text
+              position={[1.02, 0, 0.045]}
+              fontSize={0.14}
+              color="#2e2416"
+              anchorX="center"
+              anchorY="middle"
+            >
+              {`${arm.zone.name.toUpperCase()}  ${arm.dist}m →`}
+            </Text>
+            <Text
+              position={[1.02, 0, -0.045]}
+              rotation={[0, Math.PI, 0]}
+              fontSize={0.14}
+              color="#2e2416"
+              anchorX="center"
+              anchorY="middle"
+            >
+              {`← ${arm.zone.name.toUpperCase()}  ${arm.dist}m`}
+            </Text>
+          </group>
+        );
+      })}
+    </group>
+  );
+}
 
 export function Campfire({ x, z }: { x: number; z: number }) {
   const flame = useRef<THREE.Mesh>(null!);
@@ -89,25 +167,40 @@ export function Campsite({ zone }: { zone: Zone }) {
       <Campfire x={x} z={z} />
       <CampTent x={x + 4.5} z={z + 1.5} rot={-0.7} color={tentColor} />
       <CampTent x={x + 2.5} z={z + 4.5} rot={0.5} color={tentColor} />
-      {/* signpost */}
+      {/* signpost: name plate + smaller blurb, sized so nothing overflows */}
       <group position={[x - 4, sy, z - 4]} rotation={[0, 0.6, 0]}>
         <mesh position={[0, 0.8, 0]}>
           <cylinderGeometry args={[0.06, 0.08, 1.6, 6]} />
           <meshStandardMaterial color="#7a5c3a" flatShading />
         </mesh>
-        <mesh position={[0, 1.45, 0]}>
-          <boxGeometry args={[2.1, 0.6, 0.07]} />
+        <mesh position={[0, 1.62, 0]}>
+          <boxGeometry args={[2.6, 0.42, 0.07]} />
           <meshStandardMaterial color="#8a6a44" flatShading />
         </mesh>
+        <mesh position={[0, 1.16, 0]}>
+          <boxGeometry args={[2.6, 0.46, 0.07]} />
+          <meshStandardMaterial color="#7d5f3c" flatShading />
+        </mesh>
         <Text
-          position={[0, 1.52, 0.045]}
-          fontSize={0.2}
+          position={[0, 1.62, 0.045]}
+          fontSize={0.19}
           color="#2e2416"
           anchorX="center"
-          maxWidth={1.9}
+          anchorY="middle"
+          maxWidth={2.4}
+        >
+          {zone.name.toUpperCase()}
+        </Text>
+        <Text
+          position={[0, 1.16, 0.045]}
+          fontSize={0.105}
+          color="#3a2d1c"
+          anchorX="center"
+          anchorY="middle"
+          maxWidth={2.4}
           textAlign="center"
         >
-          {zone.name.toUpperCase() + "\n" + zone.blurb}
+          {zone.blurb}
         </Text>
       </group>
     </group>
@@ -186,13 +279,16 @@ export function FireLookout() {
       </mesh>
       <Text
         position={[0, 4.6, 1.1]}
-        fontSize={0.28}
+        fontSize={0.2}
         color="#f0e6cf"
         anchorX="center"
-        outlineWidth={0.014}
+        anchorY="middle"
+        maxWidth={2.3}
+        textAlign="center"
+        outlineWidth={0.012}
         outlineColor="#2e2416"
       >
-        {"ABANDONED LOOKOUT"}
+        {"ABANDONED\nLOOKOUT"}
       </Text>
     </group>
   );
