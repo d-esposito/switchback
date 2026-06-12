@@ -3,6 +3,7 @@ import { useQuery } from "convex/react";
 import * as THREE from "three";
 import { api } from "../../convex/_generated/api";
 import { heightAt, normalAt } from "./terrain";
+import { tentGroundY } from "./Landmarks";
 import { ropesRef, tentsRef } from "./sharedRefs";
 
 /** A fixed line draped ~12m down the fall line from its anchor. */
@@ -53,21 +54,21 @@ function Rope({ x, z }: { x: number; z: number }) {
 }
 
 function Tent({ x, z }: { x: number; z: number }) {
-  const y = heightAt(x, z);
+  const y = tentGroundY(x, z);
   return (
     <group position={[x, y, z]}>
       {/* A-frame canvas */}
-      <mesh position={[0, 0.55, 0]} rotation={[0, 0, Math.PI / 4]}>
+      <mesh position={[0, 0.42, 0]} rotation={[0, 0, Math.PI / 4]}>
         <boxGeometry args={[1.15, 1.15, 1.9]} />
         <meshStandardMaterial color="#3e6b48" flatShading />
       </mesh>
       {/* dark opening */}
-      <mesh position={[0, 0.38, 0.96]} rotation={[0, 0, Math.PI / 4]}>
+      <mesh position={[0, 0.28, 0.96]} rotation={[0, 0, Math.PI / 4]}>
         <boxGeometry args={[0.62, 0.62, 0.03]} />
         <meshStandardMaterial color="#1c2a1f" flatShading />
       </mesh>
       {/* ridge pole */}
-      <mesh position={[0, 1.18, 0]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh position={[0, 1.05, 0]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[0.035, 0.035, 2.1, 5]} />
         <meshStandardMaterial color="#7a5c3a" flatShading />
       </mesh>

@@ -74,6 +74,7 @@ class AudioEngine {
 
     this.scheduleBird();
     this.scheduleCricket();
+    this.scheduleCrackle();
   }
 
   /** Pink (1/f) noise via the Paul Kellet filter — soft and bass-weighted. */
@@ -175,6 +176,42 @@ class AudioEngine {
     }
   }
 
+  /**
+   * One fire pop: a tiny noise burst through a randomized bandpass with a
+   * sharp decay. Real crackle is discrete events, not a continuous bed.
+   */
+  private firePop(): void {
+    const ctx = this.ctx;
+    if (!ctx) return;
+    const pops = Math.random() < 0.25 ? 2 : 1;
+    for (let i = 0; i < pops; i++) {
+      const t0 = ctx.currentTime + i * 0.05 * Math.random();
+      const src = ctx.createBufferSource();
+      src.buffer = this.makeNoiseShort(ctx);
+      const f = ctx.createBiquadFilter();
+      f.type = "bandpass";
+      f.frequency.value = 900 + Math.random() * 2400;
+      f.Q.value = 1.2;
+      const g = ctx.createGain();
+      const peak = 0.015 + Math.random() * 0.045;
+      g.gain.setValueAtTime(0, t0);
+      g.gain.linearRampToValueAtTime(peak, t0 + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.03 + Math.random() * 0.07);
+      src.connect(f);
+      f.connect(g);
+      g.connect(this.master);
+      src.start(t0);
+      src.stop(t0 + 0.15);
+    }
+  }
+
+  private scheduleCrackle(): void {
+    setTimeout(() => {
+      if (this.ctx && this.params.nearFire && !this.muted) this.firePop();
+      this.scheduleCrackle();
+    }, 60 + Math.random() * 240);
+  }
+
   private scheduleCricket(): void {
     setTimeout(() => {
       const p = this.params;
@@ -224,7 +261,8 @@ class AudioEngine {
     const t = ctx.currentTime;
     this.wind.gain.setTargetAtTime(0.025 + p.altitude * 0.11 + p.rain * 0.03, t, 0.25);
     this.rain.gain.setTargetAtTime(p.rain * 0.3, t, 0.25);
-    this.fire.gain.setTargetAtTime(p.nearFire ? 0.12 : 0, t, 0.25);
+    // faint warm rumble under the crackle scheduler's discrete pops
+    this.fire.gain.setTargetAtTime(p.nearFire ? 0.03 : 0, t, 0.25);
   }
 
   setMuted(m: boolean): void {
