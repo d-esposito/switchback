@@ -19,6 +19,12 @@ export function getDeviceId(): string {
  * nonce lives in sessionStorage, which is per-tab and survives reloads.
  */
 export function getPresenceKey(): string {
+  // test harness: iframes share the tab's sessionStorage, so a same-page
+  // second client needs a per-window nonce override (dev only)
+  if (import.meta.env.DEV) {
+    const w = window as unknown as { __tabNonce?: string };
+    if (w.__tabNonce) return `${getDeviceId()}~${w.__tabNonce}`;
+  }
   let tab = sessionStorage.getItem(TAB_KEY);
   if (!tab) {
     tab = Math.random().toString(36).slice(2, 8);
