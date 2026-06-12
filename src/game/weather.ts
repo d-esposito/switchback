@@ -22,6 +22,12 @@ function segWeather(seg: number): { mist: number; rain: number } {
   return { mist: 0.35, rain: 0.45 + 0.55 * hash2(seg, 47, SEED) };
 }
 
+// Local-only override (the /weather command): affects only this client.
+let override: { mist?: number; rain?: number } | null = null;
+export function setWeatherOverride(o: { mist?: number; rain?: number } | null): void {
+  override = o;
+}
+
 export function weatherAt(clock: WorldClock | null): Weather {
   let mist = 0;
   let rain = 0;
@@ -34,6 +40,10 @@ export function weatherAt(clock: WorldClock | null): Weather {
     const f = Math.min(1, into / FADE_MS);
     mist = prev.mist + (cur.mist - prev.mist) * f;
     rain = prev.rain + (cur.rain - prev.rain) * f;
+  }
+  if (override) {
+    mist = override.mist ?? mist;
+    rain = override.rain ?? rain;
   }
   if (import.meta.env.DEV) {
     // automation hook: window.__tbWeather = {mist, rain} forces conditions

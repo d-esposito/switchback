@@ -1,6 +1,6 @@
 import { SimplexNoise, hash2 } from "./noise";
-import { SEED, SPAWN } from "./config";
-import { heightAt, normalAt, trailDist } from "./terrain";
+import { SEED, ZONES } from "./config";
+import { heightAt, normalAt, trailDist, masks } from "./terrain";
 
 export type ResourceKind = "sticks" | "stones" | "thatch";
 
@@ -22,23 +22,33 @@ const noise = new SimplexNoise(SEED + 5);
 export function scatterResources(): ResourceNode[] {
   const nodes: ResourceNode[] = [];
   let id = 0;
-  const step = 13;
-  for (let gx = -440; gx <= 440; gx += step) {
-    for (let gz = -440; gz <= 440; gz += step) {
+  const step = 15;
+  for (let gx = -820; gx <= 820; gx += step) {
+    for (let gz = -820; gz <= 820; gz += step) {
       const jx = gx + hash2(gx, gz, SEED + 9) * step;
       const jz = gz + hash2(gx + 3, gz + 7, SEED + 9) * step;
       const h = heightAt(jx, jz);
       const nY = normalAt(jx, jz).y;
+      const m = masks(jx, jz);
       const roll = hash2(jx, jz, SEED + 13);
-      const forestMask = noise.fbm(jx * 0.008 + 250, jz * 0.008 + 250, 3);
-      if (trailDist(jx, jz) < 3 || Math.hypot(jx - SPAWN.x, jz - SPAWN.z) < 10) continue;
+      const forestMask = noise.fbm(jx * 0.006 + 250, jz * 0.006 + 250, 3);
+      if (trailDist(jx, jz) < 3) continue;
+      if (ZONES.some((zn) => Math.hypot(jx - zn.camp.x, jz - zn.camp.z) < 12)) continue;
 
       let kind: ResourceKind | null = null;
-      if (h > 6 && h < 58 && nY > 0.74 && forestMask > 0.02 && roll > 0.82) {
+      const dry = Math.max(m.desert, m.mesa * 0.8);
+      if (h > 4 && h < 68 && nY > 0.74 && forestMask > 0.04 && dry < 0.3 && roll > 0.82) {
         kind = "sticks";
-      } else if (h > 25 && h < 130 && nY < 0.8 && roll > 0.86) {
+      } else if (
+        ((h > 25 && h < 130 && nY < 0.8) || m.mesa > 0.4) &&
+        roll > 0.86
+      ) {
         kind = "stones";
-      } else if (h > 2 && h < 14 && nY > 0.85 && roll > 0.8) {
+      } else if (
+        // meadow grass near the hub/cove, spinifex tufts across the outback
+        ((h > 2 && h < 14 && nY > 0.85) || m.desert > 0.45) &&
+        h > 0 && roll > 0.8
+      ) {
         kind = "thatch";
       }
       if (kind) {

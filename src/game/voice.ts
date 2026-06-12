@@ -77,6 +77,10 @@ class VoiceManager {
     return this.mic !== null;
   }
 
+  get session(): string | null {
+    return this.sessionId;
+  }
+
   setMyId(key: string): void {
     this.myKey = key;
   }

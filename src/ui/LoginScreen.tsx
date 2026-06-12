@@ -2,7 +2,16 @@ import { useMemo, useRef, useState } from "react";
 import { Canvas, useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { Character } from "../game/Character";
+import { ZONES } from "../game/config";
 import type { Colors, Profile } from "../game/store";
+
+const ZONE_EMOJI: Record<string, string> = {
+  basecamp: "⛺",
+  pikas: "🏔",
+  dolphins: "🐬",
+  wallabies: "🦘",
+  armadillos: "🌵",
+};
 
 const SKINS = ["#e8b58c", "#d99a6c", "#b97a4e", "#8d5a38", "#6b4226"];
 const SHIRTS = ["#d8542f", "#3e7cb1", "#74a851", "#e8a94e", "#7d5ba6", "#c2484f"];
@@ -63,11 +72,13 @@ function SwatchRow({
 
 interface LoginScreenProps {
   initial: Profile | null;
+  initialZone: string;
+  initialMic: boolean;
   joining: boolean;
-  onBegin: (p: Profile) => void;
+  onBegin: (p: Profile, zoneId: string, micOn: boolean) => void;
 }
 
-export function LoginScreen({ initial, joining, onBegin }: LoginScreenProps) {
+export function LoginScreen({ initial, initialZone, initialMic, joining, onBegin }: LoginScreenProps) {
   const placeholder = useMemo(() => pick(PLACEHOLDERS), []);
   const [name, setName] = useState(initial?.name ?? "");
   const [colors, setColors] = useState<Colors>(
@@ -80,13 +91,15 @@ export function LoginScreen({ initial, joining, onBegin }: LoginScreenProps) {
     }
   );
   const [hatStyle, setHatStyle] = useState(initial?.hatStyle ?? "cap");
+  const [zoneId, setZoneId] = useState(initialZone);
+  const [micOn, setMicOn] = useState(initialMic);
 
   const set = (key: keyof Colors) => (c: string) =>
     setColors((prev) => ({ ...prev, [key]: c }));
 
   const submit = () => {
     const finalName = name.trim() || placeholder;
-    onBegin({ name: finalName.slice(0, 24), colors, hatStyle });
+    onBegin({ name: finalName.slice(0, 24), colors, hatStyle }, zoneId, micOn);
   };
 
   return (
@@ -155,6 +168,34 @@ export function LoginScreen({ initial, joining, onBegin }: LoginScreenProps) {
               </button>
             ))}
           </div>
+
+          <div className="zone-pick" role="group" aria-label="Spawn camp">
+            <label>Start at</label>
+            <div className="zone-grid">
+              {ZONES.map((zn) => (
+                <button
+                  key={zn.id}
+                  type="button"
+                  className={`zone-btn${zoneId === zn.id ? " active" : ""}`}
+                  title={zn.blurb}
+                  onClick={() => setZoneId(zn.id)}
+                >
+                  <span className="zi">{ZONE_EMOJI[zn.id] ?? "⛺"}</span>
+                  {zn.name}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <button
+            type="button"
+            className={`mic-pick${micOn ? " on" : ""}`}
+            onClick={() => setMicOn(!micOn)}
+            title="You can change this later with the mic button in-game"
+          >
+            <span>{micOn ? "🎙" : "🔇"}</span>
+            {micOn ? "Voice on — hold V to talk to nearby hikers" : "Voice off — join quietly"}
+          </button>
 
           <button className="begin-btn" type="submit" disabled={joining}>
             {joining ? "Checking permit…" : "⛰ Begin the hike"}

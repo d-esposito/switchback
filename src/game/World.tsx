@@ -3,7 +3,7 @@ import * as THREE from "three";
 import { WORLD_SIZE, WATER_Y } from "./config";
 import { heightAt, normalAt, colorAt, scatterProps } from "./terrain";
 
-const SEGMENTS = 300;
+const SEGMENTS = 400; // 5m cells over the 2km world
 
 function buildTerrainGeometry(): THREE.BufferGeometry {
   const geo = new THREE.PlaneGeometry(WORLD_SIZE, WORLD_SIZE, SEGMENTS, SEGMENTS);
@@ -47,12 +47,14 @@ function Water() {
 const trunkGeo = new THREE.CylinderGeometry(0.14, 0.2, 1.5, 6);
 const canopyGeo = new THREE.ConeGeometry(1.15, 2.6, 7);
 const rockGeo = new THREE.DodecahedronGeometry(0.7, 0);
+const scrubGeo = new THREE.IcosahedronGeometry(0.55, 0);
 const trunkMat = new THREE.MeshStandardMaterial({ color: "#6e5135", flatShading: true });
 const canopyMat = new THREE.MeshStandardMaterial({ color: "#ffffff", flatShading: true });
 const rockMat = new THREE.MeshStandardMaterial({ color: "#ffffff", flatShading: true });
+const scrubMat = new THREE.MeshStandardMaterial({ color: "#ffffff", flatShading: true });
 
 function Props() {
-  const { trees, rocks } = useMemo(scatterProps, []);
+  const { trees, rocks, scrub } = useMemo(scatterProps, []);
 
   const instances = useMemo(() => {
     const m = new THREE.Matrix4();
@@ -85,14 +87,27 @@ function Props() {
       rocksMesh.setColorAt(i, rockColor);
     });
 
-    return { trunks, canopies, rocksMesh };
-  }, [trees, rocks]);
+    const scrubMesh = new THREE.InstancedMesh(scrubGeo, scrubMat, Math.max(1, scrub.length));
+    const scrubColor = new THREE.Color();
+    scrub.forEach((b, i) => {
+      q.setFromAxisAngle(up, b.rot);
+      s.set(b.scale, b.scale * 0.55, b.scale); // squashed outback bush
+      m.compose(new THREE.Vector3(b.x, b.y + 0.18 * b.scale, b.z), q, s);
+      scrubMesh.setMatrixAt(i, m);
+      scrubColor.setHSL(0.15 + b.tint * 0.04, 0.32, 0.3 + b.tint * 0.12);
+      scrubMesh.setColorAt(i, scrubColor);
+    });
+    scrubMesh.count = scrub.length;
+
+    return { trunks, canopies, rocksMesh, scrubMesh };
+  }, [trees, rocks, scrub]);
 
   return (
     <>
       <primitive object={instances.trunks} />
       <primitive object={instances.canopies} />
       <primitive object={instances.rocksMesh} />
+      <primitive object={instances.scrubMesh} />
     </>
   );
 }

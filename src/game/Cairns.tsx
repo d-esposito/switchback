@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { heightAt } from "./terrain";
-import { useGame, showToast } from "./store";
+import { useGame, showToast, uiCaptured } from "./store";
 import { playerPosRef } from "./sharedRefs";
 
 /** A little stack of three stones. Player-built, persistent, visible to all. */
@@ -36,7 +36,7 @@ export function Cairns() {
   const name = profile?.name;
   useEffect(() => {
     const down = (e: KeyboardEvent) => {
-      if (e.code !== "KeyB" || !name) return;
+      if (e.code !== "KeyB" || !name || uiCaptured()) return;
       const now = Date.now();
       if (now - lastBuilt.current < 5000) return; // gentle rate limit
       const p = playerPosRef.current;

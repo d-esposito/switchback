@@ -184,7 +184,8 @@ export function HUD() {
       {resting && <div className="resting-chip">🔥 resting by the fire — energy ×3</div>}
       {prompt && (
         <div className="prompt">
-          <kbd>E</kbd> {prompt.replace(/^Press E — /, "")}
+          <kbd>{(prompt.match(/^Press (\S+) — /) ?? [])[1] ?? "E"}</kbd>{" "}
+          {prompt.replace(/^Press \S+ — /, "")}
         </div>
       )}
       {toast && <div className="toast">{toast}</div>}
@@ -199,6 +200,7 @@ export function HUD() {
         <div><kbd>E</kbd> interact · <kbd>B</kbd> cairn · <kbd>C</kbd> craft</div>
         <div><kbd>R</kbd> fix rope · <kbd>T</kbd> pitch tent · <kbd>M</kbd> sound</div>
         {VOICE_ENABLED && <div><kbd>V</kbd> hold to talk to nearby hikers</div>}
+        <div><kbd>/</kbd> commands (try /help or /tp)</div>
       </div>
     </div>
   );
