@@ -76,6 +76,8 @@ class VoiceManager {
   private smoothedLevels = new Map<string, number>();
   private lastLevelsAt = 0;
   private transmitting = false;
+  /** user voice-chat volume (0..1) from settings */
+  userVolume = 1;
   private openMic = false;
   /** all SFU signaling ops run one at a time — WebRTC hates concurrent offers */
   private queue: Promise<void> = Promise.resolve();
@@ -285,7 +287,7 @@ class VoiceManager {
           })
         );
       } else if (pull) {
-        const v = Math.pow(Math.max(0, 1 - d / VOICE_RANGE), 1.6);
+        const v = Math.pow(Math.max(0, 1 - d / VOICE_RANGE), 1.6) * this.userVolume;
         if (pull.gain && this.analyserCtx) {
           // smoothed ramp — hard volume steps every tick sound like dropouts
           pull.gain.gain.setTargetAtTime(v, this.analyserCtx.currentTime, 0.15);

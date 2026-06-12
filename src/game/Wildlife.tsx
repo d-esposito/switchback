@@ -1,7 +1,7 @@
 import { useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { heightAt } from "./terrain";
+import { heightAt, meshHeightAt } from "./terrain";
 import { hash2 } from "./noise";
 import { SEED } from "./config";
 import { playerPosRef } from "./sharedRefs";
@@ -81,7 +81,7 @@ function Deer({ index }: { index: number }) {
       s.speed = Math.max(0, s.speed - dt * 4);
     }
 
-    group.current.position.set(s.x, heightAt(s.x, s.z), s.z);
+    group.current.position.set(s.x, meshHeightAt(s.x, s.z), s.z);
     group.current.rotation.y = s.heading;
 
     s.phase += dt * (2 + s.speed * 2.2);
@@ -244,7 +244,7 @@ function Fireflies() {
     seeds.forEach((s, i) => {
       const x = s.x + Math.sin(t * 0.4 + s.p1) * 2.4;
       const z = s.z + Math.cos(t * 0.31 + s.p2) * 2.4;
-      const y = heightAt(x, z) + 0.7 + Math.sin(t * 0.9 + s.p1 * 2) * 0.45;
+      const y = meshHeightAt(x, z) + 0.7 + Math.sin(t * 0.9 + s.p1 * 2) * 0.45;
       m.setPosition(x, y, z);
       mesh.current.setMatrixAt(i, m);
     });

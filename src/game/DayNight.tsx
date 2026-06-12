@@ -52,8 +52,9 @@ export function DayNight() {
     if (scene.fog) {
       scene.fog.color.copy(skyScratch);
       const fog = scene.fog as THREE.Fog;
-      fog.near = 90 * (1 - 0.7 * w.mist) * (1 - 0.45 * w.rain);
-      fog.far = 460 * (1 - 0.68 * w.mist) * (1 - 0.5 * w.rain);
+      const reach = useGame.getState().settings.renderDist; // user slider
+      fog.near = reach * 0.2 * (1 - 0.7 * w.mist) * (1 - 0.45 * w.rain);
+      fog.far = reach * (1 - 0.68 * w.mist) * (1 - 0.5 * w.rain);
     }
 
     // keep the sun lighting the world through golden hour, fading out in twilight

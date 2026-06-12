@@ -47,7 +47,9 @@ export function AudioController() {
     if (acc.current < 0.25) return;
     acc.current = 0;
 
-    const clock = useGame.getState().clock;
+    const st = useGame.getState();
+    const clock = st.clock;
+    audio.setVolumes({ master: st.settings.volMaster, ambience: st.settings.volAmbience, steps: st.settings.volSteps });
     const p = playerPosRef.current;
     const w = weatherAt(clock);
     const elev = Math.sin((timeOfDay(clock) - 0.25) * Math.PI * 2);

@@ -3,7 +3,7 @@ import { useFrame } from "@react-three/fiber";
 import { Text } from "@react-three/drei";
 import * as THREE from "three";
 import { HUB, LOOKOUT, TRAILS, ZONES, type Peak, type Zone } from "./config";
-import { heightAt } from "./terrain";
+import { meshHeightAt } from "./terrain";
 
 // which zone each trail in TRAILS leads to (same order as config.TRAILS)
 const TRAIL_DEST = ["pikas", "dolphins", "wallabies", "armadillos"];
@@ -23,7 +23,7 @@ function trailLength(line: [number, number][]): number {
 export function FingerPost() {
   const px = HUB.camp.x - 6;
   const pz = HUB.camp.z - 2;
-  const py = heightAt(px, pz);
+  const py = meshHeightAt(px, pz);
 
   const arms = TRAILS.map((line, i) => {
     const zone = ZONES.find((z) => z.id === TRAIL_DEST[i])!;
@@ -86,7 +86,7 @@ export function FingerPost() {
 export function Campfire({ x, z }: { x: number; z: number }) {
   const flame = useRef<THREE.Mesh>(null!);
   const light = useRef<THREE.PointLight>(null!);
-  const y = heightAt(x, z);
+  const y = meshHeightAt(x, z);
 
   useFrame(({ clock }) => {
     const t = clock.elapsedTime;
@@ -131,9 +131,9 @@ export function Campfire({ x, z }: { x: number; z: number }) {
 
 /** Lowest ground under a tent's footprint — tents must never hover downhill. */
 export function tentGroundY(x: number, z: number): number {
-  let y = heightAt(x, z);
+  let y = meshHeightAt(x, z);
   for (const [dx, dz] of [[1.1, 1.1], [1.1, -1.1], [-1.1, 1.1], [-1.1, -1.1]] as const) {
-    y = Math.min(y, heightAt(x + dx, z + dz));
+    y = Math.min(y, meshHeightAt(x + dx, z + dz));
   }
   return y;
 }
@@ -169,7 +169,7 @@ const TENT_COLORS: Record<string, string> = {
 /** A standup site: campfire, two team tents, and a routed signpost. */
 export function Campsite({ zone }: { zone: Zone }) {
   const { x, z } = zone.camp;
-  const sy = heightAt(x - 4, z - 4);
+  const sy = meshHeightAt(x - 4, z - 4);
   const tentColor = TENT_COLORS[zone.id] ?? "#3e6b48";
   return (
     <group>
@@ -217,7 +217,7 @@ export function Campsite({ zone }: { zone: Zone }) {
 }
 
 export function SummitRegister({ peak }: { peak: Peak }) {
-  const y = heightAt(peak.x, peak.z);
+  const y = meshHeightAt(peak.x, peak.z);
   return (
     <group position={[peak.x, y, peak.z]}>
       <mesh position={[0, 0.45, 0]}>
@@ -255,7 +255,7 @@ export function SummitRegister({ peak }: { peak: Peak }) {
 }
 
 export function FireLookout() {
-  const y = heightAt(LOOKOUT.x, LOOKOUT.z);
+  const y = meshHeightAt(LOOKOUT.x, LOOKOUT.z);
   const legs = [
     [-1.4, -1.4],
     [1.4, -1.4],

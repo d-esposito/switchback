@@ -4,7 +4,7 @@ import { useMutation } from "convex/react";
 import * as THREE from "three";
 import { api } from "../../convex/_generated/api";
 import { Character } from "./Character";
-import { heightAt, normalAt } from "./terrain";
+import { heightAt, meshHeightAt, normalAt } from "./terrain";
 import { useGame, timeOfDay, showToast } from "./store";
 import { weatherAt } from "./weather";
 import { net } from "./net";
@@ -171,8 +171,12 @@ export function LocalPlayer() {
       }
       if (e.code === "KeyQ") waveUntil.current = performance.now() + 1900;
       if (e.code === "Escape") {
-        setActivePeak(null);
-        state.setCraftOpen(false);
+        if (state.activePeak || state.craftOpen) {
+          setActivePeak(null);
+          state.setCraftOpen(false);
+        } else {
+          state.setSettingsOpen(!state.settingsOpen);
+        }
       }
     };
     const up = (e: KeyboardEvent) => (keys.current[e.code] = false);
@@ -239,7 +243,7 @@ export function LocalPlayer() {
       // automation hook: window.__tbWarp = {x, z} teleports (consumed once)
       const warp = w.__tbWarp as { x: number; z: number } | undefined;
       if (warp) {
-        p.set(warp.x, heightAt(warp.x, warp.z), warp.z);
+        p.set(warp.x, meshHeightAt(warp.x, warp.z), warp.z);
         vy.current = 0;
         w.__tbWarp = undefined;
       }
@@ -249,7 +253,7 @@ export function LocalPlayer() {
     if (teleportRef.current) {
       const t = teleportRef.current;
       teleportRef.current = null;
-      p.set(t.x, heightAt(t.x, t.z), t.z);
+      p.set(t.x, meshHeightAt(t.x, t.z), t.z);
       vy.current = 0;
     }
     if (teleportRef.launch > 0) {
@@ -282,7 +286,7 @@ export function LocalPlayer() {
         p.x *= PLAY_RADIUS / rr;
         p.z *= PLAY_RADIUS / rr;
       }
-      const gnd = heightAt(p.x, p.z);
+      const gnd = meshHeightAt(p.x, p.z);
       if (p.y < gnd + 1.2) p.y = gnd + 1.2; // belly-skim, never crash
       if (p.y > 380) p.y = 380;
       heading.current = Math.atan2(fx, fz);
@@ -370,7 +374,7 @@ export function LocalPlayer() {
     speedRef.current = speed;
 
     // --- vertical: gravity, jump, ground snap ---
-    const ground = heightAt(p.x, p.z);
+    const ground = meshHeightAt(p.x, p.z);
     if (k.Space && grounded.current && stamina.current >= STAMINA_JUMP_COST && nY > BLOCK_NY) {
       vy.current = JUMP_VEL;
       grounded.current = false;
@@ -436,7 +440,7 @@ export function LocalPlayer() {
     const cx = p.x + Math.sin(yaw.current) * Math.cos(pitch.current) * CAM_DIST;
     const cz = p.z + Math.cos(yaw.current) * Math.cos(pitch.current) * CAM_DIST;
     const cy = p.y + 1.6 + Math.sin(pitch.current) * CAM_DIST;
-    const camGround = heightAt(cx, cz) + 0.45;
+    const camGround = meshHeightAt(cx, cz) + 0.45;
     camera.position.set(cx, Math.max(cy, camGround), cz);
     camera.lookAt(p.x, p.y + 1.45, p.z);
 

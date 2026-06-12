@@ -79,6 +79,39 @@ interface GameState {
   /** True while the slash-command bar captures the keyboard. */
   commandOpen: boolean;
   setCommandOpen: (o: boolean) => void;
+
+  settingsOpen: boolean;
+  setSettingsOpen: (o: boolean) => void;
+
+  settings: Settings;
+  setSetting: (key: keyof Settings, value: number) => void;
+}
+
+export interface Settings {
+  /** fog/render distance in meters */
+  renderDist: number;
+  /** 0..1 volumes */
+  volMaster: number;
+  volAmbience: number;
+  volSteps: number;
+  volVoice: number;
+}
+
+const SETTINGS_KEY = "switchback:settings";
+const DEFAULT_SETTINGS: Settings = {
+  renderDist: 460,
+  volMaster: 1,
+  volAmbience: 1,
+  volSteps: 1,
+  volVoice: 1,
+};
+
+function loadSettings(): Settings {
+  try {
+    return { ...DEFAULT_SETTINGS, ...JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "{}") };
+  } catch {
+    return { ...DEFAULT_SETTINGS };
+  }
 }
 
 export const useGame = create<GameState>((set) => ({
@@ -118,12 +151,21 @@ export const useGame = create<GameState>((set) => ({
   setRosterVersion: (rosterVersion) => set({ rosterVersion }),
   commandOpen: false,
   setCommandOpen: (commandOpen) => set({ commandOpen }),
+  settingsOpen: false,
+  setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+  settings: loadSettings(),
+  setSetting: (key, value) =>
+    set((s) => {
+      const settings = { ...s.settings, [key]: value };
+      localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+      return { settings };
+    }),
 }));
 
 /** True when any UI layer should swallow game keybinds. */
 export function uiCaptured(): boolean {
   const s = useGame.getState();
-  return s.activePeak !== null || s.craftOpen || s.commandOpen;
+  return s.activePeak !== null || s.craftOpen || s.commandOpen || s.settingsOpen;
 }
 
 /** One toast helper: shows a message and clears it after a few seconds. */

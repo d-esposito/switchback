@@ -726,6 +726,25 @@ input {
   50% { box-shadow: 0 0 0 7px rgba(159, 224, 106, 0.18); }
 }
 
+/* settings sliders */
+.setting-row {
+  padding: 0.45rem 0;
+  border-bottom: 1px dashed rgba(44, 35, 23, 0.25);
+}
+.setting-head {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  margin-bottom: 0.25rem;
+}
+.setting-head strong {
+  font-family: "Fraunces", serif;
+}
+.setting-row input[type="range"] {
+  width: 100%;
+  accent-color: #b3552e;
+}
+
 /* slash-command bar */
 .command-bar {
   position: fixed;

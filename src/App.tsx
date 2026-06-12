@@ -5,6 +5,7 @@ import { LoginScreen } from "./ui/LoginScreen";
 import { HUD } from "./ui/HUD";
 import { RegisterPanel } from "./ui/RegisterPanel";
 import { CraftPanel } from "./ui/CraftPanel";
+import { SettingsPanel } from "./ui/SettingsPanel";
 import { VoiceController } from "./game/VoiceController";
 import { Game } from "./game/Game";
 import { CommandBar } from "./ui/CommandBar";
@@ -116,6 +117,7 @@ export default function App() {
       <HUD />
       <RegisterPanel />
       <CraftPanel />
+      <SettingsPanel />
       <CommandBar />
       <PlayerData />
       {VOICE_ENABLED && <VoiceController />}
