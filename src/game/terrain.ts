@@ -83,12 +83,42 @@ const RAMP: { x: number; z: number; h: number }[] = (() => {
  * The single source of truth for the world's shape. Deterministic from SEED,
  * shared by the terrain mesh, props, the controller and remote rendering.
  */
+// Mid-size mountains scattered in the gaps BETWEEN trails, so the journey
+// rolls and climbs without making any camp-to-camp route impassable.
+const INTERLANDS: { x: number; z: number; h: number; s: number }[] = [
+  { x: 330, z: -260, h: 85, s: 75 }, // northeast gap
+  { x: 480, z: 60, h: 70, s: 85 }, // east
+  { x: 220, z: -520, h: 72, s: 62 }, // peak's eastern shoulder
+  { x: -110, z: 620, h: 62, s: 70 }, // south
+  { x: -760, z: 60, h: 90, s: 80 }, // far west between Wash and Mesa
+  // a ridgeline walking the northeast rim-side
+  { x: 520, z: -420, h: 58, s: 55 },
+  { x: 615, z: -295, h: 68, s: 58 },
+  { x: 685, z: -160, h: 56, s: 55 },
+];
+
 export function heightAt(x: number, z: number): number {
   const m = masks(x, z);
 
-  // rolling base
-  let h = 13 * noise.fbm(x * 0.003, z * 0.003, 4);
+  // rolling base — big hills, mid swells, small detail
+  let h = 22 * noise.fbm(x * 0.0035, z * 0.0035, 4);
+  h += 9 * noise.fbm(x * 0.009 + 300, z * 0.009 + 300, 3);
   h += 2.4 * noise.fbm(x * 0.02 + 100, z * 0.02 + 100, 3);
+
+  // the interlands: mountains between the zones
+  for (const p of INTERLANDS) {
+    h += p.h * gauss(x - p.x, z - p.z, p.s);
+  }
+
+  // trails ride the land but soften its extremes: blend a third of the
+  // local relief away within ~7m of a path so routes stay hikable
+  // (applied before camp/zone shaping so camps stay exactly flat)
+  const tdEase = trailDist(x, z);
+  if (tdEase < 7) {
+    const ease = 0.32 * (1 - tdEase / 7);
+    const calm = 22 * noise.fbm(x * 0.0006, z * 0.0006, 2) + 8;
+    h = h * (1 - ease) + calm * ease;
+  }
 
   // --- Pika Peak (north): broad massif, steep upper cone, summit wall ---
   h += 150 * gauss(x - PIKA.x, z - PIKA.z, 210);
@@ -98,7 +128,7 @@ export function heightAt(x: number, z: number): number {
   const cragBand = smooth01((h - 60) / 40) * (1 - smooth01((h - 220) / 30));
   h += 8 * cragBand * noise.fbm(x * 0.05 + 500, z * 0.05 + 500, 3);
   // the bench where Pika Camp sits
-  const benchMask = 0.78 * gauss(x - PIKA.camp.x, z - PIKA.camp.z, 48);
+  const benchMask = 0.88 * gauss(x - PIKA.camp.x, z - PIKA.camp.z, 48);
   h = h * (1 - benchMask) + 62 * benchMask;
 
   // --- Armadillo Mesa (west): three strata-striped flat-tops + a ramp ---
@@ -115,7 +145,7 @@ export function heightAt(x: number, z: number): number {
   // --- Dolphin Cove (southeast): lagoon basin with wide gentle beaches ---
   const lagoon = 0.95 * gauss(x - COVE.x, z - COVE.z, 150);
   h = h * (1 - lagoon) + -10 * lagoon;
-  const beachCampMask = 0.8 * gauss(x - COVE.camp.x, z - COVE.camp.z, 42);
+  const beachCampMask = 0.88 * gauss(x - COVE.camp.x, z - COVE.camp.z, 42);
   h = h * (1 - beachCampMask) + 4.2 * beachCampMask;
 
   // --- Wallaby Wash (southwest): low red dunes + a billabong ---
@@ -127,7 +157,7 @@ export function heightAt(x: number, z: number): number {
   }
 
   // --- Basecamp Junction (hub): calm meadow ---
-  const hubMask = 0.82 * gauss(x - HUB.x, z - HUB.z, 110);
+  const hubMask = 0.9 * gauss(x - HUB.x, z - HUB.z, 110);
   h = h * (1 - hubMask) + 5 * hubMask;
 
   // rim mountains enclose the world

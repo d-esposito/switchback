@@ -10,7 +10,7 @@ import { ResourceNodes } from "./ResourceNodes";
 import { PlacedProps } from "./PlacedProps";
 import { Wildlife } from "./Wildlife";
 import { AudioController } from "./AudioController";
-import { Campsite, FireLookout, SummitRegister } from "./Landmarks";
+import { Campsite, FingerPost, FireLookout, SummitRegister } from "./Landmarks";
 import { PEAKS, ZONES } from "./config";
 
 export function Game() {
@@ -29,6 +29,7 @@ export function Game() {
       {ZONES.map((zone) => (
         <Campsite key={zone.id} zone={zone} />
       ))}
+      <FingerPost />
       {PEAKS.map((peak) => (
         <SummitRegister key={peak.id} peak={peak} />
       ))}
