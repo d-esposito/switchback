@@ -17,8 +17,8 @@ interface CharacterProps {
   animRef?: React.RefObject<string>;
   /** Optional: live speed for foot-sync; falls back to anim presets */
   speedRef?: React.RefObject<number>;
-  /** Optional: live carve lean (radians) while snowboarding; local player only */
-  boardLeanRef?: React.RefObject<number>;
+  /** Optional: live snowboard pose signals (lean/tuck/brake); local player only */
+  boardAnimRef?: React.RefObject<{ lean: number; tuck: number; brake: number }>;
   /**
    * Render a visible headlamp glow at night (remote hikers). The glow sprite
    * scales with camera distance and ignores fog, so lamps read as bright
@@ -51,13 +51,19 @@ const ANIM_SPEED: Record<string, number> = {
 
 // rest height of the torso group; legs pivot at the hip just below it
 const BODY_Y = 0.78;
+// snowboard riding stance: how far the rider's body+legs yaw relative to the
+// board (which points downhill). ~66° reads as a sideways stance while still
+// letting the head turn back to look down the fall line.
+const BOARD_STANCE = 1.15;
 
 /**
  * Procedural low-poly hiker, ~1.5m tall, feet at local origin.
  * All limbs are animated in code so we ship zero model assets.
  */
-export function Character({ colors, hatStyle, anim, animRef, speedRef, boardLeanRef, lampGlow }: CharacterProps) {
+export function Character({ colors, hatStyle, anim, animRef, speedRef, boardAnimRef, lampGlow }: CharacterProps) {
   const root = useRef<THREE.Group>(null!);
+  const rig = useRef<THREE.Group>(null!); // body+legs; yawed into the sideways snowboard stance
+  const headG = useRef<THREE.Group>(null!); // counter-yaws so the rider looks downhill while boarding
   const legL = useRef<THREE.Group>(null!);
   const legR = useRef<THREE.Group>(null!);
   const armL = useRef<THREE.Group>(null!);
@@ -95,29 +101,60 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, boardLean
       }
     }
 
+    const boarding = a === "snowboard";
+
     // wave and snowboard are the anims that twist the arms sideways (z) — relax otherwise
-    if (a !== "wave" && a !== "snowboard") {
+    if (a !== "wave" && !boarding) {
       armL.current.rotation.z = THREE.MathUtils.lerp(armL.current.rotation.z, 0, 0.2);
       armR.current.rotation.z = THREE.MathUtils.lerp(armR.current.rotation.z, 0, 0.2);
     }
 
     // the /plane easter egg: wrap the hiker in their bush plane while flying
     plane.current.visible = a === "fly";
-    // the snowboard appears under the feet while riding; the whole rig edges
-    // into carves via the lean fed from the controller (local player only)
-    board.current.visible = a === "snowboard";
-    const leanTarget = a === "snowboard" ? boardLeanRef?.current ?? 0 : 0;
-    root.current.rotation.z = THREE.MathUtils.lerp(root.current.rotation.z, leanTarget, 0.15);
+    board.current.visible = boarding;
+
+    // sideways stance: yaw the body+legs vs. the downhill-pointing board, and
+    // counter-yaw the head so the rider looks down the fall line. Carve lean
+    // edges the whole rig (board + rider) into the turn. Eased so dropping in
+    // and stepping off blend smoothly.
+    const ba = boardAnimRef?.current;
+    const lean = boarding ? ba?.lean ?? 0 : 0;
+    const stanceT = boarding ? BOARD_STANCE : 0;
+    rig.current.rotation.y = THREE.MathUtils.lerp(rig.current.rotation.y, stanceT, 0.18);
+    headG.current.rotation.y = THREE.MathUtils.lerp(headG.current.rotation.y, -stanceT * 0.7, 0.18);
+    // lean INTO the turn — the old build tilted the wrong way; this flips it
+    root.current.rotation.z = THREE.MathUtils.lerp(root.current.rotation.z, -lean * 0.55, 0.2);
+
+    if (boarding) {
+      const tuck = ba?.tuck ?? 0;
+      const brake = ba?.brake ?? 0;
+      // crouch deepens with tuck; brake settles back on a flexed rear leg
+      const crouch = 0.14 + tuck * 0.16;
+      body.current.position.y = THREE.MathUtils.lerp(body.current.position.y, BODY_Y - crouch, 0.2);
+      // forward lean for a tuck; ease upright when braking/checking speed
+      body.current.rotation.x = THREE.MathUtils.lerp(
+        body.current.rotation.x,
+        0.12 + tuck * 0.6 - brake * 0.2,
+        0.2
+      );
+      // knees bend, more in a tuck
+      const knee = 0.4 + tuck * 0.55;
+      legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, knee, 0.2);
+      legR.current.rotation.x = THREE.MathUtils.lerp(legR.current.rotation.x, knee, 0.2);
+      // arms out for balance; pulled in low while tucking, flung wide on a brake
+      const armOut = 0.95 - tuck * 0.55 + brake * 0.5;
+      const armDown = -0.3 - tuck * 0.5;
+      armL.current.rotation.x = THREE.MathUtils.lerp(armL.current.rotation.x, armDown, 0.2);
+      armR.current.rotation.x = THREE.MathUtils.lerp(armR.current.rotation.x, armDown, 0.2);
+      armL.current.rotation.z = THREE.MathUtils.lerp(armL.current.rotation.z, armOut, 0.2);
+      armR.current.rotation.z = THREE.MathUtils.lerp(armR.current.rotation.z, -armOut, 0.2);
+    } else {
+      // ease the torso forward-lean back to upright for every other anim
+      body.current.rotation.x = THREE.MathUtils.lerp(body.current.rotation.x, 0, 0.2);
+    }
 
     if (a === "snowboard") {
-      // crouched riding stance: knees bent, arms out for balance, low center
-      legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, 0.5, 0.2);
-      legR.current.rotation.x = THREE.MathUtils.lerp(legR.current.rotation.x, 0.5, 0.2);
-      armL.current.rotation.x = THREE.MathUtils.lerp(armL.current.rotation.x, -0.3, 0.2);
-      armR.current.rotation.x = THREE.MathUtils.lerp(armR.current.rotation.x, -0.3, 0.2);
-      armL.current.rotation.z = THREE.MathUtils.lerp(armL.current.rotation.z, 1.0, 0.2);
-      armR.current.rotation.z = THREE.MathUtils.lerp(armR.current.rotation.z, -1.0, 0.2);
-      body.current.position.y = THREE.MathUtils.lerp(body.current.position.y, BODY_Y - 0.12, 0.2);
+      // pose handled above
     } else if (a === "fly") {
       // seated pose, hands forward on the yoke
       legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, 1.35, 0.2);
@@ -164,6 +201,9 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, boardLean
 
   return (
     <group ref={root}>
+      {/* rig = legs + body. Yawed into the sideways stance while boarding;
+          the board stays a sibling so it keeps pointing downhill. */}
+      <group ref={rig}>
       {/* legs pivot at hip height */}
       <group ref={legL} position={[-0.11, 0.64, 0]}>
         <mesh position={[0, -0.32, 0]}>
@@ -204,6 +244,8 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, boardLean
           </mesh>
         </group>
 
+        {/* head group — counter-yaws so the rider looks downhill while boarding */}
+        <group ref={headG}>
         {/* head */}
         <mesh position={[0, 0.66, 0]}>
           <sphereGeometry args={[0.17, 12, 10]} />
@@ -265,6 +307,7 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, boardLean
             <meshStandardMaterial color={colors.hat} flatShading />
           </mesh>
         )}
+        </group>
 
         {/* backpack */}
         <mesh position={[0, 0.26, -0.21]}>
@@ -275,6 +318,7 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, boardLean
           <boxGeometry args={[0.26, 0.1, 0.12]} />
           <meshStandardMaterial color={colors.pack} flatShading />
         </mesh>
+      </group>
       </group>
 
       {/* the /plane easter egg: visible while anim === "fly" */}

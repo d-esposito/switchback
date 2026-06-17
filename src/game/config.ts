@@ -132,14 +132,19 @@ export const GRAVITY = 22;
 export const SCRAMBLE_NY = 0.72; // ground normal.y below this = scramble (slow, drains)
 export const BLOCK_NY = 0.6; // below this = climbing territory (or no purchase at 0 stamina)
 
-// Snowboard — gravity-fed carving. Drop in by pressing Space while airborne.
-export const BOARD_GRAVITY = 26; // downhill pull along the slope (m/s²)
-export const BOARD_GRIP = 6.5; // edge bite: how fast momentum rotates to heading
-export const BOARD_BRAKE = 16; // S: deceleration when checking speed (m/s²)
-export const BOARD_TURN = 2.0; // steering rate (rad/s)
-export const BOARD_MAX_SPEED = 33; // terminal speed (m/s)
-export const BOARD_OLLIE_VEL = 6.5; // Space hop while riding
-export const BOARD_SKATE = 10; // W push to get moving on flats (m/s²)
+// Snowboard — gravity-fed carving (model adapted from a reference shred game).
+// Drop in by pressing Space while airborne. Gravity is the only propulsion;
+// there is deliberately no along-heading push, so you cannot ride uphill.
+export const BOARD_TURN = 2.7; // base steering rate (rad/s); scaled down with speed
+export const BOARD_GRIP = 7.5; // edge bite: lateral velocity decay rate while carving
+export const BOARD_BRAKE_GRIP = 1.4; // loose edge while braking → the board skids sideways
+export const BOARD_DRAG = 0.011; // rolling drag; tuck lowers it, brake raises it
+export const BOARD_DRAG_TUCK = 0.0055;
+export const BOARD_DRAG_BRAKE = 0.045;
+export const BOARD_MAX_SPEED = 34; // terminal speed (m/s)
+export const BOARD_OLLIE_VEL = 7.0; // Space hop while riding
+export const BOARD_STANCE = 1.0; // rider yaw vs. the board (sideways riding stance, rad)
+export const BOARD_AIRBORNE_GAP = 0.34; // surface gap that counts as leaving the ground
 
 // Stamina (0-100)
 export const STAMINA_RUN_DRAIN = 7;
