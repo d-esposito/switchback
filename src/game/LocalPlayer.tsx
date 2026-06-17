@@ -17,8 +17,8 @@ import {
   STAMINA_RUN_DRAIN, STAMINA_SCRAMBLE_DRAIN, STAMINA_CLIMB_DRAIN, STAMINA_JUMP_COST,
   STAMINA_REGEN_IDLE, STAMINA_REGEN_WALK, CAMPFIRE_REGEN_MULT, CAMPFIRE_RADIUS,
   SEND_MIN_INTERVAL_MS,
-  BOARD_GRAVITY, BOARD_GRIP, BOARD_BRAKE, BOARD_TURN, BOARD_MAX_SPEED,
-  BOARD_OLLIE_VEL, BOARD_SKATE,
+  BOARD_TURN, BOARD_GRIP, BOARD_BRAKE_GRIP, BOARD_DRAG, BOARD_DRAG_TUCK,
+  BOARD_DRAG_BRAKE, BOARD_MAX_SPEED, BOARD_OLLIE_VEL, BOARD_AIRBORNE_GAP,
 } from "./config";
 
 const CAM_DIST = 5.4;
@@ -51,6 +51,21 @@ function nearAny(list: { x: number; z: number }[], x: number, z: number, r: numb
   return list.some((p) => Math.hypot(p.x - x, p.z - z) < r);
 }
 
+const TAU = Math.PI * 2;
+function angWrap(a: number): number {
+  while (a > Math.PI) a -= TAU;
+  while (a < -Math.PI) a += TAU;
+  return a;
+}
+/** frame-rate-independent exponential approach of a toward b */
+function damp(a: number, b: number, lambda: number, dt: number): number {
+  return a + (b - a) * (1 - Math.exp(-lambda * dt));
+}
+// scratch vectors for the snowboard physics (avoid per-frame allocation)
+const bN = new THREE.Vector3();
+const bFwd = new THREE.Vector3();
+const bLat = new THREE.Vector3();
+
 export function LocalPlayer() {
   const group = useRef<THREE.Group>(null!);
   const keys = useRef<Record<string, boolean>>({});
@@ -65,12 +80,14 @@ export function LocalPlayer() {
   const anim = useRef("idle");
   const waveUntil = useRef(0);
   const flying = useRef(false);
-  // snowboard: gravity-fed carving. boardV* is horizontal velocity (world space).
+  // snowboard: gravity-fed carving down the fall line. boardVel is the full
+  // 3D velocity (constrained onto the slope plane each frame).
   const boarding = useRef(false);
-  const boardVX = useRef(0);
-  const boardVZ = useRef(0);
-  const boardLean = useRef(0); // carve edge tilt, fed to the Character pose
+  const boardVel = useRef(new THREE.Vector3());
+  const tuckP = useRef(0); // 0..1 eased tuck amount
   const boardStopT = useRef(0); // time spent stopped, for auto-dismount
+  // live pose signals for the local rider's Character (lean/tuck/brake)
+  const boardAnim = useRef({ lean: 0, tuck: 0, brake: 0 });
   const stepPhase = useRef(0);
   const lamp = useRef<THREE.SpotLight>(null!);
   const lampTarget = useRef<THREE.Object3D>(null!);
@@ -186,32 +203,32 @@ export function LocalPlayer() {
       // Space (rising edge only): drop in / ollie / step off the snowboard.
       // The plain ground jump stays polled in the frame loop below.
       if (e.code === "Space" && !e.repeat && !flying.current) {
+        const bv = boardVel.current;
         if (boarding.current) {
           if (grounded.current) {
-            // ollie while riding
-            vy.current = BOARD_OLLIE_VEL;
+            // ollie while riding — pop straight up, keep momentum
+            bv.y = BOARD_OLLIE_VEL;
             grounded.current = false;
           } else {
             // pressed again mid-air → step off and land on your feet
             boarding.current = false;
+            vy.current = bv.y; // hand vertical momentum to the walk controller
             showToast("You pull the board off and land on your feet.");
           }
         } else if (!grounded.current && state.gear.snowboard) {
           // mid-jump drop-in: a little extra pop, then start carving downhill
           boarding.current = true;
-          vy.current = Math.max(vy.current, 4);
           boardStopT.current = 0;
+          tuckP.current = 0;
           const n = normalAt(p.x, p.z);
           const dmag = Math.hypot(n.x, n.z);
           if (dmag > 0.02) {
-            boardVX.current = (n.x / dmag) * 6;
-            boardVZ.current = (n.z / dmag) * 6;
-            heading.current = Math.atan2(n.x, n.z); // point downhill
+            heading.current = Math.atan2(n.x, n.z); // point down the fall line
+            bv.set((n.x / dmag) * 6, 4, (n.z / dmag) * 6);
           } else {
-            boardVX.current = Math.sin(heading.current) * 5;
-            boardVZ.current = Math.cos(heading.current) * 5;
+            bv.set(Math.sin(heading.current) * 5, 4, Math.cos(heading.current) * 5);
           }
-          showToast("🏂 Drop in! A/D carve · W tuck · S brake · space to ollie · space mid-air to step off");
+          showToast("🏂 Drop in! A/D carve · W tuck · S brake/slide · space ollie · space mid-air to step off");
         }
       }
       if (e.code === "KeyQ") waveUntil.current = performance.now() + 1900;
@@ -345,101 +362,108 @@ export function LocalPlayer() {
       setResting(false);
       setStamina(stamina.current);
     } else if (boarding.current) {
-      // --- snowboard: gravity carries you down, edges carve, A/D steer ---
-      const turn = (k.KeyA ? 1 : 0) - (k.KeyD ? 1 : 0);
-      heading.current += turn * BOARD_TURN * dt;
-      boardLean.current = THREE.MathUtils.lerp(boardLean.current, turn * 0.5, Math.min(1, dt * 6));
+      // --- snowboard: gravity down the fall line, edge-grip carving ----------
+      const v = boardVel.current;
+      const steer = (k.KeyA ? 1 : 0) - (k.KeyD ? 1 : 0);
+      const tuck = !!(k.KeyW || k.ShiftLeft || k.ShiftRight);
+      const braking = !!k.KeyS;
+      tuckP.current = damp(tuckP.current, tuck ? 1 : 0, 8, dt);
 
-      const fwdx = Math.sin(heading.current);
-      const fwdz = Math.cos(heading.current);
-      const n = normalAt(p.x, p.z);
+      bN.copy(normalAt(p.x, p.z));
+      const slopeMag = Math.hypot(bN.x, bN.z);
+
+      // gravity, then cancel any velocity into the surface (stay on the slope)
+      v.y -= GRAVITY * dt;
+      if (grounded.current) {
+        const vn = v.dot(bN);
+        if (vn < 0) v.addScaledVector(bN, -vn);
+      }
+
+      let sp = v.length();
+      // steering: turn slows with speed and while tucking; releasing the steer
+      // straightens toward travel, then drifts back to the local fall line so
+      // you can never hold a turn straight up the mountain
+      const sRate = (BOARD_TURN / (1 + sp * 0.013)) * (1 - 0.45 * tuckP.current);
+      heading.current += steer * sRate * dt;
+      if (sp > 2 && Math.abs(steer) < 0.5) {
+        const velYaw = Math.atan2(v.x, v.z);
+        heading.current += angWrap(velYaw - heading.current) * Math.min(1, 4.5 * dt);
+        if (slopeMag > 0.03) {
+          const downYaw = Math.atan2(bN.x, bN.z);
+          heading.current += angWrap(downYaw - heading.current) * Math.min(1, 0.7 * dt);
+        }
+      }
+      // braking carves the board across the line of travel for a sideways skid
+      if (braking && sp > 3) {
+        const velYaw = Math.atan2(v.x, v.z);
+        const side = boardAnim.current.lean >= 0 ? 1 : -1;
+        heading.current += angWrap(velYaw + side * 1.1 - heading.current) * Math.min(1, 3 * dt);
+      }
+      heading.current = angWrap(heading.current);
 
       if (grounded.current) {
-        // gravity pulls toward the downhill direction (the normal's horizontal part)
-        boardVX.current += n.x * BOARD_GRAVITY * dt;
-        boardVZ.current += n.z * BOARD_GRAVITY * dt;
+        // edge grip: forward speed is kept, lateral (sideways) speed bleeds off.
+        // Braking loosens the edge, so momentum keeps sliding sideways — a skid.
+        bFwd.set(Math.sin(heading.current), 0, Math.cos(heading.current));
+        bFwd.addScaledVector(bN, -bFwd.dot(bN)).normalize();
+        bLat.crossVectors(bN, bFwd).normalize();
+        const vF = v.dot(bFwd);
+        const vL = v.dot(bLat);
+        const grip = braking ? BOARD_BRAKE_GRIP : BOARD_GRIP;
+        const vL2 = vL * Math.exp(-grip * dt);
+        v.copy(bFwd).multiplyScalar(vF).addScaledVector(bLat, vL2);
 
-        // edge grip: rotate momentum toward the board's heading (a carve, not a
-        // dead stop). S loosens the edge so you skid and scrub speed.
-        let sp = Math.hypot(boardVX.current, boardVZ.current);
-        if (sp > 1.5) {
-          const velAngle = Math.atan2(boardVX.current, boardVZ.current);
-          let d = heading.current - velAngle;
-          while (d > Math.PI) d -= Math.PI * 2;
-          while (d < -Math.PI) d += Math.PI * 2;
-          const grip = Math.min(1, BOARD_GRIP * dt * (k.KeyS ? 0.4 : 1));
-          const a = velAngle + d * grip;
-          boardVX.current = Math.sin(a) * sp;
-          boardVZ.current = Math.cos(a) * sp;
-        }
+        // drag: tuck for speed, brake to scrub it hard
+        let drag = braking ? BOARD_DRAG_BRAKE : tuck ? BOARD_DRAG_TUCK : BOARD_DRAG;
+        sp = v.length();
+        v.multiplyScalar(Math.max(0, 1 - drag * sp * dt));
 
-        // brake (S), light snow drag (less while tucking with W), skate when slow
-        sp = Math.hypot(boardVX.current, boardVZ.current);
-        if (k.KeyS && sp > 0.01) {
-          const f = Math.max(0, sp - BOARD_BRAKE * dt) / sp;
-          boardVX.current *= f;
-          boardVZ.current *= f;
-        }
-        const drag = Math.max(0, 1 - (k.KeyW ? 0.04 : 0.16) * dt);
-        boardVX.current *= drag;
-        boardVZ.current *= drag;
-        if (k.KeyW && sp < 9) {
-          boardVX.current += fwdx * BOARD_SKATE * dt;
-          boardVZ.current += fwdz * BOARD_SKATE * dt;
+        // anti-stall: a gentle nudge toward the local downhill so you never get
+        // stuck in a dip — never along the heading, so you can't climb
+        if (sp < 2.5 && slopeMag > 0.04) {
+          v.x += bN.x * 6 * dt;
+          v.z += bN.z * 6 * dt;
         }
       }
 
       // terminal speed
-      let sp = Math.hypot(boardVX.current, boardVZ.current);
+      sp = v.length();
       if (sp > BOARD_MAX_SPEED) {
-        const f = BOARD_MAX_SPEED / sp;
-        boardVX.current *= f;
-        boardVZ.current *= f;
+        v.multiplyScalar(BOARD_MAX_SPEED / sp);
         sp = BOARD_MAX_SPEED;
       }
 
-      // move horizontally (soft world boundary)
-      const oldGround = p.y;
-      let nx = p.x + boardVX.current * dt;
-      let nz = p.z + boardVZ.current * dt;
-      const rr = Math.hypot(nx, nz);
+      // integrate, soft world boundary
+      p.addScaledVector(v, dt);
+      const rr = Math.hypot(p.x, p.z);
       if (rr > PLAY_RADIUS) {
-        nx *= PLAY_RADIUS / rr;
-        nz *= PLAY_RADIUS / rr;
+        p.x *= PLAY_RADIUS / rr;
+        p.z *= PLAY_RADIUS / rr;
       }
-      p.x = nx;
-      p.z = nz;
 
-      // vertical: glue to the surface, but launch off convex lips for real air
+      // ground contact: snap to the surface, or leave it for air off a lip
       const gnd = meshHeightAt(p.x, p.z);
       if (grounded.current) {
-        const grad = Math.hypot(n.x, n.z) / Math.max(n.y, 0.2);
-        const expectedDrop = grad * sp * dt + 0.06;
-        if (oldGround - gnd > expectedDrop + 0.25 && sp > 5) {
-          grounded.current = false; // sail off the lip, keep height → air
-          vy.current = 0;
-        } else {
-          p.y = gnd;
-          vy.current = 0;
-        }
-      } else {
-        vy.current -= GRAVITY * dt;
-        p.y += vy.current * dt;
-        if (p.y <= gnd) {
-          p.y = gnd;
-          vy.current = 0;
-          grounded.current = true;
-        }
+        if (p.y - gnd > BOARD_AIRBORNE_GAP) grounded.current = false;
+        else p.y = gnd;
+      } else if (p.y <= gnd) {
+        p.y = gnd;
+        grounded.current = true;
+        const vn = v.dot(bN); // land: shed the into-slope component
+        if (vn < 0) v.addScaledVector(bN, -vn);
       }
 
-      // chase cam: ease the view to trail the board (mouse still overrides)
-      let dy = heading.current + Math.PI - yaw.current;
-      while (dy > Math.PI) dy -= Math.PI * 2;
-      while (dy < -Math.PI) dy += Math.PI * 2;
-      yaw.current += dy * Math.min(1, dt * 2.5);
+      // carve lean follows the steer, scaled by speed; fed to the rider pose
+      const leanTarget = steer * THREE.MathUtils.clamp(sp / 9, 0, 1);
+      boardAnim.current.lean = damp(boardAnim.current.lean, leanTarget, 10, dt);
+      boardAnim.current.tuck = tuckP.current;
+      boardAnim.current.brake = damp(boardAnim.current.brake, braking ? 1 : 0, 10, dt);
 
-      // coast to a stop on the flats → step off automatically
-      if (grounded.current && sp < 1.2) {
+      // chase cam eases to trail the board (mouse still overrides)
+      yaw.current += angWrap(heading.current + Math.PI - yaw.current) * Math.min(1, dt * 2.5);
+
+      // coast to a stop → step off automatically (no getting stuck)
+      if (grounded.current && sp < 1.1) {
         boardStopT.current += dt;
         if (boardStopT.current > 0.5) {
           boarding.current = false;
@@ -453,11 +477,7 @@ export function LocalPlayer() {
       speedRef.current = sp;
       anim.current = "snowboard";
       setResting(false);
-      stamina.current = THREE.MathUtils.clamp(
-        stamina.current + STAMINA_REGEN_WALK * dt,
-        0,
-        100
-      );
+      stamina.current = THREE.MathUtils.clamp(stamina.current + STAMINA_REGEN_WALK * dt, 0, 100);
       setStamina(stamina.current);
     } else {
 
@@ -595,7 +615,8 @@ export function LocalPlayer() {
         x: p.x, y: p.y, z: p.z,
         stamina: stamina.current, anim: anim.current, speed, nY,
         boarding: boarding.current, grounded: grounded.current,
-        boardSpeed: Math.hypot(boardVX.current, boardVZ.current),
+        boardSpeed: boardVel.current.length(),
+        heading: heading.current, lean: boardAnim.current.lean, tuck: tuckP.current,
         keys: { ...keys.current },
       };
     }
@@ -689,7 +710,7 @@ export function LocalPlayer() {
           anim="idle"
           animRef={anim}
           speedRef={speedRef}
-          boardLeanRef={boardLean}
+          boardAnimRef={boardAnim}
         />
       </group>
       {/* headlamp: world-space spotlight, only visible when dark */}
