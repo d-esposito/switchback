@@ -3,14 +3,20 @@ import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 
 const EMPTY_INV = { sticks: 0, stones: 0, thatch: 0 };
-const EMPTY_GEAR = { walkingStick: false, ropes: 0, tents: 0 };
+const EMPTY_GEAR = { walkingStick: false, ropes: 0, tents: 0, snowboard: false };
 const INV_CAP = 99;
 
 export const RECIPES: Record<string, { sticks?: number; stones?: number; thatch?: number }> = {
   walkingStick: { sticks: 3, stones: 1 },
   rope: { sticks: 1, thatch: 4 },
   tent: { sticks: 5, thatch: 4 },
+  snowboard: { sticks: 8, stones: 2 },
 };
+
+/** Merge stored gear over defaults so older docs gain new fields (snowboard). */
+function normalizeGear(gear: Partial<typeof EMPTY_GEAR> | undefined) {
+  return { ...EMPTY_GEAR, ...(gear ?? {}) };
+}
 
 const MAX_PLACED = { ropes: 200, tents: 100 };
 
@@ -28,7 +34,7 @@ export const me = query({
     if (!p) return null;
     return {
       inventory: p.inventory ?? EMPTY_INV,
-      gear: p.gear ?? EMPTY_GEAR,
+      gear: normalizeGear(p.gear),
     };
   },
 });
@@ -50,16 +56,24 @@ export const gather = mutation({
 export const craft = mutation({
   args: {
     deviceId: v.string(),
-    item: v.union(v.literal("walkingStick"), v.literal("rope"), v.literal("tent")),
+    item: v.union(
+      v.literal("walkingStick"),
+      v.literal("rope"),
+      v.literal("tent"),
+      v.literal("snowboard"),
+    ),
   },
   handler: async (ctx, { deviceId, item }) => {
     const p = await getPlayer(ctx, deviceId);
     if (!p) return { ok: false, reason: "no player" };
     const inv = { ...(p.inventory ?? EMPTY_INV) };
-    const gear = { ...(p.gear ?? EMPTY_GEAR) };
+    const gear = normalizeGear(p.gear);
 
     if (item === "walkingStick" && gear.walkingStick) {
       return { ok: false, reason: "already carrying one" };
+    }
+    if (item === "snowboard" && gear.snowboard) {
+      return { ok: false, reason: "already have a board" };
     }
     const cost = RECIPES[item];
     for (const [k, n] of Object.entries(cost)) {
@@ -71,6 +85,7 @@ export const craft = mutation({
     if (item === "walkingStick") gear.walkingStick = true;
     if (item === "rope") gear.ropes += 1;
     if (item === "tent") gear.tents += 1;
+    if (item === "snowboard") gear.snowboard = true;
     await ctx.db.patch(p._id, { inventory: inv, gear });
     return { ok: true };
   },

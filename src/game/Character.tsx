@@ -17,6 +17,8 @@ interface CharacterProps {
   animRef?: React.RefObject<string>;
   /** Optional: live speed for foot-sync; falls back to anim presets */
   speedRef?: React.RefObject<number>;
+  /** Optional: live carve lean (radians) while snowboarding; local player only */
+  boardLeanRef?: React.RefObject<number>;
   /**
    * Render a visible headlamp glow at night (remote hikers). The glow sprite
    * scales with camera distance and ignores fog, so lamps read as bright
@@ -44,7 +46,7 @@ function getGlowTexture(): THREE.CanvasTexture {
 const worldPos = new THREE.Vector3();
 
 const ANIM_SPEED: Record<string, number> = {
-  idle: 0, walk: 4.3, run: 7.6, jump: 2, climb: 2.2, wave: 0, fly: 0,
+  idle: 0, walk: 4.3, run: 7.6, jump: 2, climb: 2.2, wave: 0, fly: 0, snowboard: 0,
 };
 
 // rest height of the torso group; legs pivot at the hip just below it
@@ -54,7 +56,8 @@ const BODY_Y = 0.78;
  * Procedural low-poly hiker, ~1.5m tall, feet at local origin.
  * All limbs are animated in code so we ship zero model assets.
  */
-export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow }: CharacterProps) {
+export function Character({ colors, hatStyle, anim, animRef, speedRef, boardLeanRef, lampGlow }: CharacterProps) {
+  const root = useRef<THREE.Group>(null!);
   const legL = useRef<THREE.Group>(null!);
   const legR = useRef<THREE.Group>(null!);
   const armL = useRef<THREE.Group>(null!);
@@ -64,6 +67,7 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow 
   const glow = useRef<THREE.Sprite>(null!);
   const glowLight = useRef<THREE.PointLight>(null!);
   const plane = useRef<THREE.Group>(null!);
+  const board = useRef<THREE.Group>(null!);
   const phase = useRef(Math.random() * 10);
 
   useFrame(({ camera }, dt) => {
@@ -91,15 +95,30 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow 
       }
     }
 
-    // wave is the only anim that twists the arm sideways — relax it otherwise
-    if (a !== "wave") {
+    // wave and snowboard are the anims that twist the arms sideways (z) — relax otherwise
+    if (a !== "wave" && a !== "snowboard") {
+      armL.current.rotation.z = THREE.MathUtils.lerp(armL.current.rotation.z, 0, 0.2);
       armR.current.rotation.z = THREE.MathUtils.lerp(armR.current.rotation.z, 0, 0.2);
     }
 
     // the /plane easter egg: wrap the hiker in their bush plane while flying
     plane.current.visible = a === "fly";
+    // the snowboard appears under the feet while riding; the whole rig edges
+    // into carves via the lean fed from the controller (local player only)
+    board.current.visible = a === "snowboard";
+    const leanTarget = a === "snowboard" ? boardLeanRef?.current ?? 0 : 0;
+    root.current.rotation.z = THREE.MathUtils.lerp(root.current.rotation.z, leanTarget, 0.15);
 
-    if (a === "fly") {
+    if (a === "snowboard") {
+      // crouched riding stance: knees bent, arms out for balance, low center
+      legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, 0.5, 0.2);
+      legR.current.rotation.x = THREE.MathUtils.lerp(legR.current.rotation.x, 0.5, 0.2);
+      armL.current.rotation.x = THREE.MathUtils.lerp(armL.current.rotation.x, -0.3, 0.2);
+      armR.current.rotation.x = THREE.MathUtils.lerp(armR.current.rotation.x, -0.3, 0.2);
+      armL.current.rotation.z = THREE.MathUtils.lerp(armL.current.rotation.z, 1.0, 0.2);
+      armR.current.rotation.z = THREE.MathUtils.lerp(armR.current.rotation.z, -1.0, 0.2);
+      body.current.position.y = THREE.MathUtils.lerp(body.current.position.y, BODY_Y - 0.12, 0.2);
+    } else if (a === "fly") {
       // seated pose, hands forward on the yoke
       legL.current.rotation.x = THREE.MathUtils.lerp(legL.current.rotation.x, 1.35, 0.2);
       legR.current.rotation.x = THREE.MathUtils.lerp(legR.current.rotation.x, 1.35, 0.2);
@@ -144,7 +163,7 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow 
   });
 
   return (
-    <group>
+    <group ref={root}>
       {/* legs pivot at hip height */}
       <group ref={legL} position={[-0.11, 0.64, 0]}>
         <mesh position={[0, -0.32, 0]}>
@@ -261,6 +280,37 @@ export function Character({ colors, hatStyle, anim, animRef, speedRef, lampGlow 
       {/* the /plane easter egg: visible while anim === "fly" */}
       <group ref={plane} visible={false} position={[0, -0.35, -0.3]}>
         <PlaneMesh />
+      </group>
+
+      {/* snowboard: long along the travel axis, under the feet; visible riding */}
+      <group ref={board} visible={false} position={[0, 0.07, 0]}>
+        <mesh>
+          <boxGeometry args={[0.34, 0.06, 1.5]} />
+          <meshStandardMaterial color={colors.pack} flatShading />
+        </mesh>
+        {/* dark base / edges */}
+        <mesh position={[0, -0.04, 0]}>
+          <boxGeometry args={[0.36, 0.02, 1.52]} />
+          <meshStandardMaterial color="#26262b" flatShading />
+        </mesh>
+        {/* upturned nose + tail */}
+        <mesh position={[0, 0.04, 0.78]} rotation={[-0.5, 0, 0]}>
+          <boxGeometry args={[0.34, 0.06, 0.2]} />
+          <meshStandardMaterial color={colors.pack} flatShading />
+        </mesh>
+        <mesh position={[0, 0.04, -0.78]} rotation={[0.5, 0, 0]}>
+          <boxGeometry args={[0.34, 0.06, 0.2]} />
+          <meshStandardMaterial color={colors.pack} flatShading />
+        </mesh>
+        {/* bindings under each foot */}
+        <mesh position={[0, 0.06, 0.2]}>
+          <boxGeometry args={[0.22, 0.05, 0.14]} />
+          <meshStandardMaterial color="#1d1d20" flatShading />
+        </mesh>
+        <mesh position={[0, 0.06, -0.2]}>
+          <boxGeometry args={[0.22, 0.05, 0.14]} />
+          <meshStandardMaterial color="#1d1d20" flatShading />
+        </mesh>
       </group>
     </group>
   );

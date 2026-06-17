@@ -55,7 +55,7 @@ interface GameState {
   inventory: { sticks: number; stones: number; thatch: number };
   setInventory: (i: GameState["inventory"]) => void;
 
-  gear: { walkingStick: boolean; ropes: number; tents: number };
+  gear: { walkingStick: boolean; ropes: number; tents: number; snowboard: boolean };
   setGear: (g: GameState["gear"]) => void;
 
   craftOpen: boolean;
@@ -137,7 +137,7 @@ export const useGame = create<GameState>((set) => ({
   setToast: (toast) => set({ toast }),
   inventory: { sticks: 0, stones: 0, thatch: 0 },
   setInventory: (inventory) => set({ inventory }),
-  gear: { walkingStick: false, ropes: 0, tents: 0 },
+  gear: { walkingStick: false, ropes: 0, tents: 0, snowboard: false },
   setGear: (gear) => set({ gear }),
   craftOpen: false,
   setCraftOpen: (craftOpen) => set({ craftOpen }),

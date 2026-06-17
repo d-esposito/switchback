@@ -132,6 +132,15 @@ export const GRAVITY = 22;
 export const SCRAMBLE_NY = 0.72; // ground normal.y below this = scramble (slow, drains)
 export const BLOCK_NY = 0.6; // below this = climbing territory (or no purchase at 0 stamina)
 
+// Snowboard — gravity-fed carving. Drop in by pressing Space while airborne.
+export const BOARD_GRAVITY = 26; // downhill pull along the slope (m/s²)
+export const BOARD_GRIP = 6.5; // edge bite: how fast momentum rotates to heading
+export const BOARD_BRAKE = 16; // S: deceleration when checking speed (m/s²)
+export const BOARD_TURN = 2.0; // steering rate (rad/s)
+export const BOARD_MAX_SPEED = 33; // terminal speed (m/s)
+export const BOARD_OLLIE_VEL = 6.5; // Space hop while riding
+export const BOARD_SKATE = 10; // W push to get moving on flats (m/s²)
+
 // Stamina (0-100)
 export const STAMINA_RUN_DRAIN = 7;
 export const STAMINA_SCRAMBLE_DRAIN = 5;
