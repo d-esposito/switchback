@@ -19,6 +19,8 @@ export const gearValidator = v.object({
   walkingStick: v.boolean(),
   ropes: v.number(),
   tents: v.number(),
+  // optional so player docs written before the snowboard shipped still validate
+  snowboard: v.optional(v.boolean()),
 });
 
 export default defineSchema({

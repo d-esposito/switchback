@@ -17,6 +17,8 @@ import {
   STAMINA_RUN_DRAIN, STAMINA_SCRAMBLE_DRAIN, STAMINA_CLIMB_DRAIN, STAMINA_JUMP_COST,
   STAMINA_REGEN_IDLE, STAMINA_REGEN_WALK, CAMPFIRE_REGEN_MULT, CAMPFIRE_RADIUS,
   SEND_MIN_INTERVAL_MS,
+  BOARD_GRAVITY, BOARD_GRIP, BOARD_BRAKE, BOARD_TURN, BOARD_MAX_SPEED,
+  BOARD_OLLIE_VEL, BOARD_SKATE,
 } from "./config";
 
 const CAM_DIST = 5.4;
@@ -63,6 +65,12 @@ export function LocalPlayer() {
   const anim = useRef("idle");
   const waveUntil = useRef(0);
   const flying = useRef(false);
+  // snowboard: gravity-fed carving. boardV* is horizontal velocity (world space).
+  const boarding = useRef(false);
+  const boardVX = useRef(0);
+  const boardVZ = useRef(0);
+  const boardLean = useRef(0); // carve edge tilt, fed to the Character pose
+  const boardStopT = useRef(0); // time spent stopped, for auto-dismount
   const stepPhase = useRef(0);
   const lamp = useRef<THREE.SpotLight>(null!);
   const lampTarget = useRef<THREE.Object3D>(null!);
@@ -117,6 +125,7 @@ export function LocalPlayer() {
         const parked = planeRef.parked;
         if (parked && Math.hypot(p.x - parked.x, p.z - parked.z) < 4) {
           flying.current = true;
+          boarding.current = false;
           planeRef.parked = null;
           showToast("Contact! W boost · S slow · mouse steers · E to hop out");
           return;
@@ -172,6 +181,37 @@ export function LocalPlayer() {
         } else {
           void placeTentMut({ deviceId, x: p.x, y: p.y, z: p.z });
           showToast("Tent pitched — a camp for every hiker.");
+        }
+      }
+      // Space (rising edge only): drop in / ollie / step off the snowboard.
+      // The plain ground jump stays polled in the frame loop below.
+      if (e.code === "Space" && !e.repeat && !flying.current) {
+        if (boarding.current) {
+          if (grounded.current) {
+            // ollie while riding
+            vy.current = BOARD_OLLIE_VEL;
+            grounded.current = false;
+          } else {
+            // pressed again mid-air → step off and land on your feet
+            boarding.current = false;
+            showToast("You pull the board off and land on your feet.");
+          }
+        } else if (!grounded.current && state.gear.snowboard) {
+          // mid-jump drop-in: a little extra pop, then start carving downhill
+          boarding.current = true;
+          vy.current = Math.max(vy.current, 4);
+          boardStopT.current = 0;
+          const n = normalAt(p.x, p.z);
+          const dmag = Math.hypot(n.x, n.z);
+          if (dmag > 0.02) {
+            boardVX.current = (n.x / dmag) * 6;
+            boardVZ.current = (n.z / dmag) * 6;
+            heading.current = Math.atan2(n.x, n.z); // point downhill
+          } else {
+            boardVX.current = Math.sin(heading.current) * 5;
+            boardVZ.current = Math.cos(heading.current) * 5;
+          }
+          showToast("🏂 Drop in! A/D carve · W tuck · S brake · space to ollie · space mid-air to step off");
         }
       }
       if (e.code === "KeyQ") waveUntil.current = performance.now() + 1900;
@@ -250,6 +290,7 @@ export function LocalPlayer() {
       if (warp) {
         p.set(warp.x, meshHeightAt(warp.x, warp.z), warp.z);
         vy.current = 0;
+        boarding.current = false;
         w.__tbWarp = undefined;
       }
     }
@@ -260,6 +301,7 @@ export function LocalPlayer() {
       teleportRef.current = null;
       p.set(t.x, meshHeightAt(t.x, t.z), t.z);
       vy.current = 0;
+      boarding.current = false;
     }
     if (teleportRef.launch > 0) {
       vy.current = teleportRef.launch;
@@ -301,6 +343,121 @@ export function LocalPlayer() {
       vy.current = 0;
       anim.current = "fly";
       setResting(false);
+      setStamina(stamina.current);
+    } else if (boarding.current) {
+      // --- snowboard: gravity carries you down, edges carve, A/D steer ---
+      const turn = (k.KeyA ? 1 : 0) - (k.KeyD ? 1 : 0);
+      heading.current += turn * BOARD_TURN * dt;
+      boardLean.current = THREE.MathUtils.lerp(boardLean.current, turn * 0.5, Math.min(1, dt * 6));
+
+      const fwdx = Math.sin(heading.current);
+      const fwdz = Math.cos(heading.current);
+      const n = normalAt(p.x, p.z);
+
+      if (grounded.current) {
+        // gravity pulls toward the downhill direction (the normal's horizontal part)
+        boardVX.current += n.x * BOARD_GRAVITY * dt;
+        boardVZ.current += n.z * BOARD_GRAVITY * dt;
+
+        // edge grip: rotate momentum toward the board's heading (a carve, not a
+        // dead stop). S loosens the edge so you skid and scrub speed.
+        let sp = Math.hypot(boardVX.current, boardVZ.current);
+        if (sp > 1.5) {
+          const velAngle = Math.atan2(boardVX.current, boardVZ.current);
+          let d = heading.current - velAngle;
+          while (d > Math.PI) d -= Math.PI * 2;
+          while (d < -Math.PI) d += Math.PI * 2;
+          const grip = Math.min(1, BOARD_GRIP * dt * (k.KeyS ? 0.4 : 1));
+          const a = velAngle + d * grip;
+          boardVX.current = Math.sin(a) * sp;
+          boardVZ.current = Math.cos(a) * sp;
+        }
+
+        // brake (S), light snow drag (less while tucking with W), skate when slow
+        sp = Math.hypot(boardVX.current, boardVZ.current);
+        if (k.KeyS && sp > 0.01) {
+          const f = Math.max(0, sp - BOARD_BRAKE * dt) / sp;
+          boardVX.current *= f;
+          boardVZ.current *= f;
+        }
+        const drag = Math.max(0, 1 - (k.KeyW ? 0.04 : 0.16) * dt);
+        boardVX.current *= drag;
+        boardVZ.current *= drag;
+        if (k.KeyW && sp < 9) {
+          boardVX.current += fwdx * BOARD_SKATE * dt;
+          boardVZ.current += fwdz * BOARD_SKATE * dt;
+        }
+      }
+
+      // terminal speed
+      let sp = Math.hypot(boardVX.current, boardVZ.current);
+      if (sp > BOARD_MAX_SPEED) {
+        const f = BOARD_MAX_SPEED / sp;
+        boardVX.current *= f;
+        boardVZ.current *= f;
+        sp = BOARD_MAX_SPEED;
+      }
+
+      // move horizontally (soft world boundary)
+      const oldGround = p.y;
+      let nx = p.x + boardVX.current * dt;
+      let nz = p.z + boardVZ.current * dt;
+      const rr = Math.hypot(nx, nz);
+      if (rr > PLAY_RADIUS) {
+        nx *= PLAY_RADIUS / rr;
+        nz *= PLAY_RADIUS / rr;
+      }
+      p.x = nx;
+      p.z = nz;
+
+      // vertical: glue to the surface, but launch off convex lips for real air
+      const gnd = meshHeightAt(p.x, p.z);
+      if (grounded.current) {
+        const grad = Math.hypot(n.x, n.z) / Math.max(n.y, 0.2);
+        const expectedDrop = grad * sp * dt + 0.06;
+        if (oldGround - gnd > expectedDrop + 0.25 && sp > 5) {
+          grounded.current = false; // sail off the lip, keep height → air
+          vy.current = 0;
+        } else {
+          p.y = gnd;
+          vy.current = 0;
+        }
+      } else {
+        vy.current -= GRAVITY * dt;
+        p.y += vy.current * dt;
+        if (p.y <= gnd) {
+          p.y = gnd;
+          vy.current = 0;
+          grounded.current = true;
+        }
+      }
+
+      // chase cam: ease the view to trail the board (mouse still overrides)
+      let dy = heading.current + Math.PI - yaw.current;
+      while (dy > Math.PI) dy -= Math.PI * 2;
+      while (dy < -Math.PI) dy += Math.PI * 2;
+      yaw.current += dy * Math.min(1, dt * 2.5);
+
+      // coast to a stop on the flats → step off automatically
+      if (grounded.current && sp < 1.2) {
+        boardStopT.current += dt;
+        if (boardStopT.current > 0.5) {
+          boarding.current = false;
+          showToast("You coast to a stop and step off the board.");
+        }
+      } else {
+        boardStopT.current = 0;
+      }
+
+      speed = sp;
+      speedRef.current = sp;
+      anim.current = "snowboard";
+      setResting(false);
+      stamina.current = THREE.MathUtils.clamp(
+        stamina.current + STAMINA_REGEN_WALK * dt,
+        0,
+        100
+      );
       setStamina(stamina.current);
     } else {
 
@@ -437,6 +594,8 @@ export function LocalPlayer() {
       (window as unknown as Record<string, unknown>).__tb = {
         x: p.x, y: p.y, z: p.z,
         stamina: stamina.current, anim: anim.current, speed, nY,
+        boarding: boarding.current, grounded: grounded.current,
+        boardSpeed: Math.hypot(boardVX.current, boardVZ.current),
         keys: { ...keys.current },
       };
     }
@@ -466,6 +625,8 @@ export function LocalPlayer() {
     let promptText: string | null = null;
     if (flying.current) {
       promptText = "Press E — hop out";
+    } else if (boarding.current) {
+      promptText = "Space mid-air — step off the board";
     } else if (!ui.activePeak && !ui.craftOpen) {
       const parked = planeRef.parked;
       const nearPlane = parked && Math.hypot(p.x - parked.x, p.z - parked.z) < 4;
@@ -487,8 +648,8 @@ export function LocalPlayer() {
     }
     setPrompt(promptText);
 
-    // --- footstep pulses for the audio engine ---
-    if (grounded.current && speed > 0.5) {
+    // --- footstep pulses for the audio engine (not while riding) ---
+    if (grounded.current && speed > 0.5 && !boarding.current) {
       const before = Math.sin(stepPhase.current);
       stepPhase.current += dt * 2.1 * speed;
       if (Math.sin(stepPhase.current) >= 0 && before < 0) {
@@ -528,6 +689,7 @@ export function LocalPlayer() {
           anim="idle"
           animRef={anim}
           speedRef={speedRef}
+          boardLeanRef={boardLean}
         />
       </group>
       {/* headlamp: world-space spotlight, only visible when dark */}

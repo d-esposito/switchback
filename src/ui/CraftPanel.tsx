@@ -4,10 +4,12 @@ import { useGame, showToast } from "../game/store";
 import { getDeviceId } from "../lib/ids";
 
 interface Recipe {
-  item: "walkingStick" | "rope" | "tent";
+  item: "walkingStick" | "rope" | "tent" | "snowboard";
   name: string;
   desc: string;
   cost: { sticks?: number; stones?: number; thatch?: number };
+  /** boolean gear you own once (vs. consumable stacks like rope/tent) */
+  keep?: boolean;
 }
 
 const RECIPES: Recipe[] = [
@@ -16,6 +18,7 @@ const RECIPES: Recipe[] = [
     name: "Walking stick",
     desc: "Scrambles drain 35% less stamina. Keep it forever.",
     cost: { sticks: 3, stones: 1 },
+    keep: true,
   },
   {
     item: "rope",
@@ -28,6 +31,13 @@ const RECIPES: Recipe[] = [
     name: "Tent",
     desc: "Press T on flat ground — a rest camp with a regen aura, for everyone.",
     cost: { sticks: 5, thatch: 4 },
+  },
+  {
+    item: "snowboard",
+    name: "Snowboard",
+    desc: "Jump, then press space mid-air to drop in and carve down the slopes. Keep it forever.",
+    cost: { sticks: 8, stones: 2 },
+    keep: true,
   },
 ];
 
@@ -68,10 +78,13 @@ export function CraftPanel() {
           {gear.walkingStick && " · 🥾 walking stick"}
           {gear.ropes > 0 && ` · 🧗 rope ×${gear.ropes}`}
           {gear.tents > 0 && ` · ⛺ tent ×${gear.tents}`}
+          {gear.snowboard && " · 🏂 snowboard"}
         </p>
 
         {RECIPES.map((r) => {
-          const owned = r.item === "walkingStick" && gear.walkingStick;
+          const owned =
+            (r.item === "walkingStick" && gear.walkingStick) ||
+            (r.item === "snowboard" && gear.snowboard);
           return (
             <div className="recipe" key={r.item}>
               <div className="recipe-text">
