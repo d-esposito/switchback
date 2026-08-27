@@ -1,63 +1,85 @@
 # Switchback
 
-A small multiplayer hiking world for the browser. I wanted other players to feel like hikers you happened to meet on a trail, so there is proximity voice instead of a global chat and a shared world instead of private quest markers. The weather turns at the same time for everyone. Ropes, tents, cairns, and summit-register signatures stay behind after you leave.
+Standup was boring as hell one day, so I made a tiny hiking game for my coworkers to wander around in while we talked. Screensharing works!
 
-[DESIGN.md](DESIGN.md) has the longer design doc and build plan.
+Then I added multiplayer. Then proximity voice. Then weather, climbing, campfires, crafting, deer, persistent cairns, and summit registers. It got a little out of hand.
 
-## Playing
+[Play it here](https://switchback-game.vercel.app), or read the much more serious [design doc](DESIGN.md).
 
-Use `WASD` to hike and the mouse to look. Click once to capture the pointer. `Shift` runs and `Space` hops. Steep rock turns into a slow climb that eats stamina, so charging straight up the mountain is usually a bad idea.
+## How to hike
 
-Press `E` to sign the registers on Crown Peak and Outlook Knob, `B` to stack a cairn, and `Q` to wave. The world clock belongs to everyone. Headlamps come on at dusk, and every hiker sees the same sunset. Campfires restore stamina three times faster.
+Use `WASD` to walk and the mouse to look around. Click the game once to capture the pointer. `Shift` runs and `Space` does a tiny hop.
+
+Steep rock turns into a climb and chews through stamina. If you sprint straight at a cliff, you are probably going to slide back down looking stupid. Campfires refill stamina three times faster.
+
+Press `E` to sign the summit registers on Crown Peak and Outlook Knob. `B` stacks a cairn. `Q` waves at whoever joined the call late.
 
 ### Weather
 
-Mist and rain move through on 2.5-minute fronts. Weather comes from the shared clock rather than database state, so everybody gets wet together. Wet rock costs 40% more stamina to climb.
+Everyone shares one world clock, so the sun sets for the whole group at once and headlamps kick on together. Rain and mist roll through in 2.5-minute fronts. Wet rock takes 40% more stamina to climb because apparently the mountain was not annoying enough.
+
+Weather is calculated from the shared clock instead of stored in the database. Everyone sees the same storm without constantly writing rain updates to Convex.
 
 ### Gathering and crafting
 
-Press `E` to gather sticks from the forest floor, stones from rocky slopes, and thatch from meadow tufts. Nodes return after about three minutes. Press `C` at a campfire or tent to open the workbench.
+Press `E` to pick up sticks in the forest, stones on rocky slopes, and thatch in meadows. They come back after about three minutes.
 
-You can make a walking stick for gentler scrambles, a rope coil that gives every hiker a faster line up steep rock, or a tent that becomes a shared rest camp. `R` fixes a rope and `T` pitches a tent. Inventory and gear persist on the server.
+Press `C` at a campfire or tent to craft stuff:
 
-### Wildlife and sound
+- A walking stick makes scrambles less punishing.
+- A rope coil lets you press `R` on steep rock and leave a faster route for everybody.
+- A tent lets you press `T` and drop a shared rest camp.
 
-Deer wander through meadows and bolt when you charge at them. Birds circle the valley. Fireflies show up near the lake after dark. WebAudio synthesizes the ambience, including altitude-dependent wind, rain, birdsong, crickets, campfire crackle, and footsteps that change with the ground. Press `M` to toggle sound.
+Your inventory and gear stick around after you leave. So do the ropes, tents, cairns, and register signatures you leave in the world.
 
-### Proximity voice
+### Critters and noise
 
-Click the mic button in the bottom-right corner, then hold `V` to talk to hikers within about 28 meters. Voices fade with distance. Click the mic button again for open mic.
+Deer wander through the meadows and run if you charge at them, which you will. Birds circle the valley. Fireflies show up around the lake at night.
 
-Voice uses peer-to-peer WebRTC with STUN and no TURN relay, so some strict NATs will refuse to cooperate. Convex handles signaling only. A green dot pulses over whoever is speaking.
+All the sound comes from WebAudio. Wind changes with altitude, footsteps change with the ground, and the world picks up rain, birds, crickets, and campfire crackle as needed. Press `M` if your standup already has enough background noise.
 
-### Developer shortcuts
+### Talking to people
 
-Development builds expose `window.__tbWarp = {x, z}`, `window.__tbLook = {yaw, pitch}`, `window.__tb` for live state, and `window.__tbWeather = {rain, mist}`. Run `npx convex run world:nudge '{"toPhase":0.75}'` to jump the shared clock.
+Screensharing is still the easiest way to pass the game around during a call. If everybody wants to join, there is proximity voice too.
 
-## Stack
+Click the mic button in the bottom-right corner, then hold `V` to talk to hikers within about 28 meters. Volume drops with distance. Click the mic again for open mic.
 
-- Vite, React, TypeScript, and React Three Fiber power the client.
-- A [PartyServer](https://github.com/cloudflare/partykit) room on a Cloudflare Durable Object handles the hot path. One WebSocket per tab carries the roster, position updates at about 12.5 Hz, and voice signaling.
-- [Convex](https://convex.dev) stores profiles, inventory, registers, cairns, ropes, tents, and the world clock.
-- Vercel hosts the frontend. Cloudflare Workers runs the party server, and Convex Cloud holds the durable data.
+Voice is peer-to-peer WebRTC with STUN and no TURN relay. Some strict NATs will simply say no. Convex only handles signaling. A green dot bounces over whoever is talking.
 
-## Development
+### Useful dev cheats
+
+Development builds expose a few console helpers:
+
+- `window.__tbWarp = {x, z}` teleports you.
+- `window.__tbLook = {yaw, pitch}` points the camera.
+- `window.__tb` dumps live state.
+- `window.__tbWeather = {rain, mist}` changes the weather.
+- `npx convex run world:nudge '{"toPhase":0.75}'` jumps the shared clock.
+
+## What is running where
+
+- Vite, React, TypeScript, and React Three Fiber run the game in the browser.
+- A [PartyServer](https://github.com/cloudflare/partykit) room on a Cloudflare Durable Object handles the busy stuff. One WebSocket per tab carries the player list, position updates at about 12.5 Hz, and voice signaling.
+- [Convex](https://convex.dev) remembers profiles, inventory, summit registers, cairns, ropes, tents, and the world clock.
+- Vercel hosts the frontend. Cloudflare Workers runs the party server. Convex Cloud stores the stuff that needs to survive a refresh.
+
+## Run it locally
 
 ```sh
 npm install && (cd party && npm install)
-npm run dev:backend        # convex dev; pushes functions and watches convex/
-(cd party && npm run dev)  # Mountain room on 127.0.0.1:8787
-npm run dev                # Vite dev server
+npm run dev:backend        # push Convex functions and watch convex/
+(cd party && npm run dev)  # run the Mountain room on 127.0.0.1:8787
+npm run dev                # run Vite
 ```
 
-`npx convex dev` writes the development `VITE_CONVEX_URL` to `.env.local`. Add `VITE_PARTY_HOST=127.0.0.1:8787` to use the local party room.
+`npx convex dev` writes the development `VITE_CONVEX_URL` into `.env.local`. Add `VITE_PARTY_HOST=127.0.0.1:8787` to use the local party room.
 
-## Deploy
+## Deploy it
 
 ```sh
-npx convex deploy            # deploy the durable backend to Convex
-(cd party && npm run deploy) # deploy the Mountain room to Cloudflare
-vercel --prod                # deploy the frontend to Vercel
+npx convex deploy            # Convex
+(cd party && npm run deploy) # Cloudflare
+vercel --prod                # Vercel
 ```
 
-In Vercel, set `VITE_CONVEX_URL` to the production Convex URL and `VITE_PARTY_HOST` to `switchback-party.d-esposito.workers.dev`. Preview deployments use development Convex and the same party worker.
+Set `VITE_CONVEX_URL` to the production Convex URL in Vercel. Set `VITE_PARTY_HOST` to `switchback-party.d-esposito.workers.dev`. Preview deployments use development Convex and the same party worker.
